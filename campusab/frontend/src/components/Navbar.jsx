@@ -1,0 +1,46 @@
+import { Link, useNavigate } from 'react-router-dom';
+import { MapPin, CalendarDays, LogOut, LogIn, ShieldCheck } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+
+export default function Navbar() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  return (
+    <header className="bg-adventista-azul text-white shadow-md">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
+        <Link to="/" className="flex items-center gap-2 text-lg font-semibold">
+          <MapPin className="h-5 w-5" />
+          ACJ-Camp
+        </Link>
+        <nav className="flex items-center gap-4 text-sm">
+          <Link to="/buscar" className="flex items-center gap-1 hover:text-adventista-dorado">
+            <MapPin className="h-4 w-4" /> Buscar
+          </Link>
+          <Link to="/reservas" className="flex items-center gap-1 hover:text-adventista-dorado">
+            <CalendarDays className="h-4 w-4" /> Reservas
+          </Link>
+          {user?.rol === 'admin' && (
+            <Link to="/admin" className="flex items-center gap-1 hover:text-adventista-dorado">
+              <ShieldCheck className="h-4 w-4" /> Admin
+            </Link>
+          )}
+          {user ? (
+            <button onClick={handleLogout} className="flex items-center gap-1 rounded bg-white/10 px-3 py-2 hover:bg-white/20">
+              <LogOut className="h-4 w-4" /> Salir
+            </button>
+          ) : (
+            <Link to="/login" className="flex items-center gap-1 rounded bg-adventista-dorado px-3 py-2 font-medium text-slate-900">
+              <LogIn className="h-4 w-4" /> Ingresar
+            </Link>
+          )}
+        </nav>
+      </div>
+    </header>
+  );
+}
