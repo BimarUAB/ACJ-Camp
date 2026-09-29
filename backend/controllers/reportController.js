@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const ExcelJS = require('exceljs');
 
 exports.getDashboardStats = async (req, res) => {
   try {
@@ -27,12 +28,10 @@ exports.getDashboardStats = async (req, res) => {
 exports.getLugaresPopulares = async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT l.id, l.nombre, l.direccion, COUNT(r.id) AS total_reservas,
-             COALESCE(AVG(res.calificacion), 0)::numeric(3,2) AS promedio_calificacion
+      SELECT l.id, l.nombre, l.direccion,
+             (SELECT COUNT(*) FROM reservas r WHERE r.lugar_id = l.id AND r.estado <> 'cancelada') AS total_reservas,
+             COALESCE((SELECT AVG(res.calificacion) FROM resenas res WHERE res.lugar_id = l.id), 0)::numeric(3,2) AS promedio_calificacion
       FROM lugares_camping l
-      LEFT JOIN reservas r ON l.id = r.lugar_id
-      LEFT JOIN resenas res ON l.id = res.lugar_id
-      GROUP BY l.id, l.nombre, l.direccion
       ORDER BY total_reservas DESC, promedio_calificacion DESC
       LIMIT 10
     `);
@@ -78,7 +77,7 @@ exports.getReservasPorZona = async (req, res) => {
   }
 };
 
-exports.exportarLugaresCSV = async (req, res) => {
+exports.exportarLugaresExcel = async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT l.nombre, l.direccion, l.estado, l.capacidad_maxima, l.precio_aprox,
@@ -89,15 +88,26 @@ exports.exportarLugaresCSV = async (req, res) => {
       ORDER BY l.created_at DESC
     `);
 
-    const headers = ['nombre', 'direccion', 'estado', 'capacidad_maxima', 'precio_aprox', 'creador', 'promedio'];
-    const rows = result.rows.map(row => headers.map(h => `"${String(row[h] || '').replace(/"/g, '""')}"`).join(','));
-    const csv = [headers.join(','), ...rows].join('\n');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Lugares');
+    sheet.columns = [
+      { header: 'Nombre del lugar', key: 'nombre', width: 30 },
+      { header: 'Dirección', key: 'direccion', width: 38 },
+      { header: 'Estado', key: 'estado', width: 16 },
+      { header: 'Capacidad máxima', key: 'capacidad_maxima', width: 20 },
+      { header: 'Precio aproximado (Bs.)', key: 'precio_aprox', width: 24 },
+      { header: 'Registrado por', key: 'creador', width: 24 },
+      { header: 'Calificación promedio', key: 'promedio', width: 22 }
+    ];
+    sheet.addRows(result.rows);
+    sheet.getRow(1).font = { bold: true };
+    const file = await workbook.xlsx.writeBuffer();
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=lugares.csv');
-    res.send(csv);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="reporte-lugares.xlsx"');
+    res.send(Buffer.from(file));
   } catch (error) {
-    console.error('Error exportando CSV:', error);
-    res.status(500).json({ success: false, error: 'Error al exportar CSV' });
+    console.error('Error exportando Excel:', error);
+    res.status(500).json({ success: false, error: 'Error al exportar reporte Excel' });
   }
 };
