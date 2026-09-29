@@ -8,6 +8,8 @@ import BuscarLugares from './pages/BuscarLugares';
 import DetalleLugar from './pages/DetalleLugar';
 import MisReservas from './pages/MisReservas';
 import AdminPanel from './pages/AdminPanel';
+import GestionClubs from './pages/GestionClubs';
+import ProponerLugar from './pages/ProponerLugar';
 
 function App() {
   return (
@@ -19,6 +21,16 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/buscar" element={<BuscarLugares />} />
           <Route path="/lugar/:id" element={<DetalleLugar />} />
+          <Route path="/mis-clubes" element={
+            <ProtectedRoute requireDirector>
+              <GestionClubs />
+            </ProtectedRoute>
+          } />
+          <Route path="/mis-lugares" element={
+            <ProtectedRoute>
+              <ProponerLugar />
+            </ProtectedRoute>
+          } />
           <Route path="/reservas" element={
             <ProtectedRoute>
               <MisReservas />

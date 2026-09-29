@@ -9,7 +9,7 @@ import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
 
 export default function Dashboard() {
-  const { user, isAdmin, isDirector } = useAuth();
+  const { user, isAdmin, isAuthenticated } = useAuth();
   const [lugares, setLugares] = useState([]);
   const [reservas, setReservas] = useState([]);
   const [stats, setStats] = useState(null);
@@ -22,7 +22,7 @@ export default function Dashboard() {
       setError('');
       const [lugRes, resRes] = await Promise.all([
         lugarService.getAll({ estado: 'activo', limit: 3 }),
-        reservaService.getMisReservas()
+        isAuthenticated ? reservaService.getMisReservas() : Promise.resolve({ data: { reservas: [] } })
       ]);
       setLugares(lugRes.data?.lugares || lugRes.data || []);
       setReservas(resRes.data?.reservas || resRes.data || []);
@@ -40,7 +40,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     cargarDatos();
-  }, []);
+  }, [isAuthenticated]);
 
   if (loading) return <Loading message="Cargando dashboard..." />;
 
@@ -48,7 +48,7 @@ export default function Dashboard() {
     <div className="mx-auto max-w-7xl px-4 py-10">
       <div className="rounded-3xl bg-gradient-to-r from-adventista-azul to-slate-800 p-8 text-white shadow-xl">
         <p className="mb-2 text-sm uppercase tracking-[0.3em] text-slate-200">ACJ-Camp</p>
-        <h1 className="text-3xl font-bold">Hola, {user?.nombre || 'líder'} 👋</h1>
+        <h1 className="text-3xl font-bold">{user ? `Hola, ${user.nombre}` : 'Encuentra tu próximo campamento'}</h1>
         <p className="mt-3 max-w-2xl text-slate-200">
           Encuentra lugares de campamento, gestiona tus reservas y comparte reseñas con otros clubes adventistas.
         </p>
@@ -77,7 +77,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="mt-8 grid gap-6 md:grid-cols-3">
+      <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Link to="/buscar" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
           <div className="mb-4 inline-flex rounded-full bg-adventista-dorado/20 p-3 text-adventista-azul">
             <Compass className="h-6 w-6" />
@@ -85,6 +85,13 @@ export default function Dashboard() {
           <h2 className="text-xl font-semibold text-slate-900">Explorar lugares</h2>
           <p className="mt-2 text-sm text-slate-600">Busca campings cercanos con filtros por servicios y distancia.</p>
         </Link>
+        {isAuthenticated && (
+          <Link to="/mis-lugares" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+            <div className="mb-4 inline-flex rounded-full bg-adventista-dorado/20 p-3 text-adventista-azul"><MapPin className="h-6 w-6" /></div>
+            <h2 className="text-xl font-semibold text-slate-900">Mis lugares</h2>
+            <p className="mt-2 text-sm text-slate-600">Agrega o edita lugares de campamento.</p>
+          </Link>
+        )}
         <Link to="/reservas" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
           <div className="mb-4 inline-flex rounded-full bg-adventista-dorado/20 p-3 text-adventista-azul">
             <CalendarRange className="h-6 w-6" />

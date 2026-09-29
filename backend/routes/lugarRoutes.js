@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const lugarController = require('../controllers/lugarController');
 const auth = require('../middleware/auth');
 
@@ -12,15 +12,23 @@ const validate = (req, res, next) => {
   next();
 };
 
-router.get('/', lugarController.getAllLugares);
+router.get('/',
+  auth.optionalVerifyToken,
+  query('lat').optional().isFloat({ min: -90, max: 90 }),
+  query('lng').optional().isFloat({ min: -180, max: 180 }),
+  query('radio').optional().isFloat({ min: 0.1, max: 5000 }),
+  validate,
+  lugarController.getAllLugares
+);
 router.get('/pendientes', auth.verifyToken, auth.requireAdmin, lugarController.getLugaresPendientes);
-router.get('/:id', param('id').isInt(), lugarController.getLugarById);
+router.get('/mis', auth.verifyToken, lugarController.getMisLugares);
+router.get('/:id', auth.optionalVerifyToken, param('id').isInt(), validate, lugarController.getLugarById);
 
 router.post('/',
   auth.verifyToken,
   body('nombre').notEmpty().trim(),
-  body('latitud').isFloat(),
-  body('longitud').isFloat(),
+  body('latitud').isFloat({ min: -90, max: 90 }),
+  body('longitud').isFloat({ min: -180, max: 180 }),
   validate,
   lugarController.createLugar
 );
@@ -28,8 +36,8 @@ router.post('/',
 router.put('/:id',
   auth.verifyToken,
   param('id').isInt(),
-  body('latitud').optional().isFloat(),
-  body('longitud').optional().isFloat(),
+  body('latitud').optional().isFloat({ min: -90, max: 90 }),
+  body('longitud').optional().isFloat({ min: -180, max: 180 }),
   body('estado').optional().isIn(['pendiente', 'activo', 'inactivo']),
   validate,
   lugarController.updateLugar
@@ -48,6 +56,14 @@ router.put('/:id/aprobar',
   param('id').isInt(),
   validate,
   lugarController.aprobarLugar
+);
+
+router.put('/:id/rechazar',
+  auth.verifyToken,
+  auth.requireAdmin,
+  param('id').isInt(),
+  validate,
+  lugarController.rechazarLugar
 );
 
 module.exports = router;

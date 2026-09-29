@@ -15,10 +15,18 @@ exports.getAllClubs = async (req, res) => {
       params.push(iglesia_id);
     }
 
+    if (req.user.rol === 'director') {
+      conditions.push(`c.director_id = $${++paramCount}`);
+      params.push(req.user.id);
+    } else if (req.user.rol !== 'admin') {
+      conditions.push(`c.iglesia_id = (SELECT iglesia_id FROM usuarios WHERE id = $${++paramCount})`);
+      params.push(req.user.id);
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const result = await pool.query(`
-      SELECT c.*, u.nombre AS director_nombre, u.email AS director_email, i.nombre AS iglesia_nombre
+      SELECT c.*, u.nombre AS director_nombre, i.nombre AS iglesia_nombre
       FROM clubs c
       LEFT JOIN usuarios u ON c.director_id = u.id
       LEFT JOIN iglesias i ON c.iglesia_id = i.id
@@ -37,7 +45,7 @@ exports.getClubById = async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(`
-      SELECT c.*, u.nombre AS director_nombre, u.email AS director_email, i.nombre AS iglesia_nombre
+      SELECT c.*, u.nombre AS director_nombre, i.nombre AS iglesia_nombre
       FROM clubs c
       LEFT JOIN usuarios u ON c.director_id = u.id
       LEFT JOIN iglesias i ON c.iglesia_id = i.id
@@ -46,6 +54,14 @@ exports.getClubById = async (req, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Club no encontrado' });
+    }
+
+    const club = result.rows[0];
+    if (!isAdmin(req)) {
+      const access = await pool.query('SELECT iglesia_id FROM usuarios WHERE id = $1', [req.user.id]);
+      if (club.director_id !== req.user.id && club.iglesia_id !== access.rows[0]?.iglesia_id) {
+        return res.status(403).json({ success: false, error: 'No tiene permisos para ver este club' });
+      }
     }
 
     res.json({ success: true, club: result.rows[0] });
@@ -77,17 +93,29 @@ exports.createClub = async (req, res) => {
       return res.status(400).json({ success: false, error: 'La iglesia seleccionada no existe' });
     }
 
-    const finalDirectorId = director_id || req.user.id;
+    let finalIglesiaId = iglesia_id;
+    let finalDirectorId = director_id || req.user.id;
+    if (req.user.rol === 'director') {
+      const director = await pool.query('SELECT iglesia_id FROM usuarios WHERE id = $1', [req.user.id]);
+      if (!director.rows[0]?.iglesia_id || Number(director.rows[0].iglesia_id) !== Number(iglesia_id)) {
+        return res.status(403).json({ success: false, error: 'Solo puede crear clubes asociados a su iglesia' });
+      }
+      finalIglesiaId = director.rows[0].iglesia_id;
+      finalDirectorId = req.user.id;
+    }
 
     const result = await pool.query(
       `INSERT INTO clubs (nombre, tipo, iglesia_id, director_id, logo_url)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [nombre, tipo, iglesia_id, finalDirectorId, logo_url || null]
+      [nombre, tipo, finalIglesiaId, finalDirectorId, logo_url || null]
     );
 
     res.status(201).json({ success: true, message: 'Club creado exitosamente', club: result.rows[0] });
   } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ success: false, error: 'Este director ya tiene un club asignado' });
+    }
     console.error('Error creando club:', error);
     res.status(500).json({ success: false, error: 'Error al crear club' });
   }
@@ -132,7 +160,8 @@ exports.updateClub = async (req, res) => {
            logo_url = COALESCE($5, logo_url)
        WHERE id = $6
        RETURNING *`,
-      [nombre, tipo, iglesia_id, director_id, logo_url, id]
+      [nombre, tipo, isAdmin(req) ? iglesia_id : existing.iglesia_id,
+        isAdmin(req) ? director_id : existing.director_id, logo_url, id]
     );
 
     res.json({ success: true, message: 'Club actualizado exitosamente', club: result.rows[0] });

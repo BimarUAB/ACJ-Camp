@@ -13,18 +13,24 @@ export default function Navbar() {
 
   return (
     <header className="bg-adventista-azul text-white shadow-md">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <Link to="/" className="flex items-center gap-2 text-lg font-semibold">
           <MapPin className="h-5 w-5" />
           ACJ-Camp
         </Link>
-        <nav className="flex items-center gap-4 text-sm">
+        <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm sm:justify-end">
           <Link to="/buscar" className="flex items-center gap-1 hover:text-adventista-dorado">
             <MapPin className="h-4 w-4" /> Buscar
           </Link>
           <Link to="/reservas" className="flex items-center gap-1 hover:text-adventista-dorado">
             <CalendarDays className="h-4 w-4" /> Reservas
           </Link>
+          {user && <Link to="/mis-lugares" className="flex items-center gap-1 hover:text-adventista-dorado">Mis lugares</Link>}
+          {user?.rol === 'director' && (
+            <>
+              <Link to="/mis-clubes" className="flex items-center gap-1 hover:text-adventista-dorado">Mis clubes</Link>
+            </>
+          )}
           {user?.rol === 'admin' && (
             <Link to="/admin" className="flex items-center gap-1 hover:text-adventista-dorado">
               <ShieldCheck className="h-4 w-4" /> Admin
