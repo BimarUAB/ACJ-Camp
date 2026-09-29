@@ -29,9 +29,9 @@ exports.verifyToken = async (req, res, next) => {
     }
 
     req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      rol: decoded.rol
+      id: userResult.rows[0].id,
+      email: userResult.rows[0].email,
+      rol: userResult.rows[0].rol
     };
 
     next();
@@ -43,6 +43,29 @@ exports.verifyToken = async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'Token inválido' });
     }
     res.status(500).json({ success: false, error: 'Error de autenticación' });
+  }
+};
+
+exports.optionalVerifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return next();
+  if (!authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Token inválido' });
+  }
+
+  try {
+    const decoded = jwt.verify(authHeader.substring(7), process.env.JWT_SECRET || 'acj-camp-dev-secret');
+    const result = await pool.query(
+      'SELECT id, email, rol, estado FROM usuarios WHERE id = $1',
+      [decoded.id]
+    );
+    if (!result.rows.length || result.rows[0].estado === 'inactivo') {
+      return res.status(401).json({ success: false, error: 'Sesión no válida' });
+    }
+    req.user = result.rows[0];
+    next();
+  } catch (error) {
+    return res.status(401).json({ success: false, error: 'Token inválido o expirado' });
   }
 };
 

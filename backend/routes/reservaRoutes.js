@@ -13,10 +13,11 @@ const validate = (req, res, next) => {
 };
 
 router.get('/mis', auth.verifyToken, reservaController.getMyReservas);
-router.get('/lugar/:id', auth.verifyToken, param('id').isInt(), validate, reservaController.getReservasByLugar);
+router.get('/lugar/:id', param('id').isInt(), validate, reservaController.getReservasByLugar);
 
 router.get('/',
   auth.verifyToken,
+  auth.requireAdmin,
   query('lugar_id').optional().isInt(),
   query('club_id').optional().isInt(),
   query('estado').optional().isIn(['pendiente', 'confirmada', 'cancelada', 'completada']),

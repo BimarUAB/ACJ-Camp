@@ -1,22 +1,6 @@
 const pool = require('../config/database');
 
 const isAdmin = (req) => req.user?.rol === 'admin';
-const isDirectorOrAdmin = (req) => req.user?.rol === 'director' || isAdmin(req);
-
-const hayConflictoReserva = async (lugarId, fechaInicio, fechaFin, excludeId = null) => {
-  const query = `
-    SELECT id FROM reservas
-    WHERE lugar_id = $1
-      AND estado NOT IN ('cancelada')
-      AND fecha_inicio <= $2
-      AND fecha_fin >= $3
-      ${excludeId ? 'AND id != $4' : ''}
-  `;
-  const params = [lugarId, fechaFin, fechaInicio];
-  if (excludeId) params.push(excludeId);
-  const result = await pool.query(query, params);
-  return result.rows.length > 0;
-};
 
 exports.getAllReservas = async (req, res) => {
   try {
@@ -79,9 +63,8 @@ exports.getReservasByLugar = async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(`
-      SELECT r.id, r.fecha_inicio, r.fecha_fin, r.estado, r.proposito, c.nombre AS club_nombre
+      SELECT r.id, r.fecha_inicio, r.fecha_fin, r.estado
       FROM reservas r
-      LEFT JOIN clubs c ON r.club_id = c.id
       WHERE r.lugar_id = $1 AND r.estado NOT IN ('cancelada')
       ORDER BY r.fecha_inicio ASC
     `, [id]);
@@ -94,6 +77,7 @@ exports.getReservasByLugar = async (req, res) => {
 };
 
 exports.createReserva = async (req, res) => {
+  let client;
   try {
     const { lugar_id, club_id, fecha_inicio, fecha_fin, proposito, notas } = req.body;
 
@@ -105,31 +89,61 @@ exports.createReserva = async (req, res) => {
       return res.status(400).json({ success: false, error: 'La fecha de inicio no puede ser mayor que la fecha de fin' });
     }
 
-    const lugar = await pool.query('SELECT id, estado FROM lugares_camping WHERE id = $1', [lugar_id]);
-    if (lugar.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Lugar no encontrado' });
-    }
-    if (lugar.rows[0].estado !== 'activo') {
-      return res.status(400).json({ success: false, error: 'El lugar no está disponible para reservas' });
+    if (req.user.rol !== 'admin' && !club_id) {
+      return res.status(400).json({ success: false, error: 'Selecciona un club para asociar la reserva' });
     }
 
     if (club_id) {
-      const club = await pool.query('SELECT id FROM clubs WHERE id = $1', [club_id]);
+      const club = req.user.rol === 'admin'
+        ? await pool.query('SELECT id FROM clubs WHERE id = $1', [club_id])
+        : req.user.rol === 'director'
+          ? await pool.query('SELECT id FROM clubs WHERE id = $1 AND director_id = $2', [club_id, req.user.id])
+          : await pool.query(
+            `SELECT c.id FROM clubs c
+             JOIN usuarios u ON u.iglesia_id = c.iglesia_id
+             WHERE c.id = $1 AND u.id = $2`,
+            [club_id, req.user.id]
+          );
       if (club.rows.length === 0) {
         return res.status(400).json({ success: false, error: 'El club seleccionado no existe' });
       }
     }
 
-    if (await hayConflictoReserva(lugar_id, fecha_inicio, fecha_fin)) {
-      return res.status(409).json({ success: false, error: 'El lugar ya tiene una reserva en esas fechas' });
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const lugar = await client.query(
+      'SELECT id, estado FROM lugares_camping WHERE id = $1 FOR UPDATE',
+      [lugar_id]
+    );
+    if (lugar.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Lugar no encontrado' });
+    }
+    if (lugar.rows[0].estado !== 'activo') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: 'El lugar no está disponible para reservas' });
     }
 
-    const result = await pool.query(
+    const conflicto = await client.query(
+      `SELECT id FROM reservas
+       WHERE lugar_id = $1 AND estado <> 'cancelada'
+         AND (fecha_inicio, fecha_fin + 1) OVERLAPS ($2::date, $3::date + 1)
+       LIMIT 1`,
+      [lugar_id, fecha_inicio, fecha_fin]
+    );
+    if (conflicto.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: 'El lugar ya está reservado en esas fechas' });
+    }
+
+    const result = await client.query(
       `INSERT INTO reservas (lugar_id, club_id, usuario_id, fecha_inicio, fecha_fin, proposito, notas)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [lugar_id, club_id || null, req.user.id, fecha_inicio, fecha_fin, proposito || null, notas || null]
     );
+    await client.query('COMMIT');
 
     res.status(201).json({
       success: true,
@@ -137,46 +151,78 @@ exports.createReserva = async (req, res) => {
       reserva: result.rows[0]
     });
   } catch (error) {
+    if (client) {
+      await client.query('ROLLBACK').catch(() => {});
+    }
+    if (error.code === '23P01') {
+      return res.status(400).json({ success: false, error: 'El lugar ya está reservado en esas fechas' });
+    }
     console.error('Error creando reserva:', error);
     res.status(500).json({ success: false, error: 'Error al crear reserva' });
+  } finally {
+    client?.release();
   }
 };
 
 exports.updateReserva = async (req, res) => {
+  let client;
   try {
     const { id } = req.params;
     const { lugar_id, club_id, fecha_inicio, fecha_fin, proposito, notas, estado } = req.body;
 
-    const existingResult = await pool.query('SELECT * FROM reservas WHERE id = $1', [id]);
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const existingResult = await client.query('SELECT * FROM reservas WHERE id = $1 FOR UPDATE', [id]);
     if (existingResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, error: 'Reserva no encontrada' });
     }
     const existing = existingResult.rows[0];
 
     if (existing.usuario_id !== req.user.id && !isAdmin(req)) {
+      await client.query('ROLLBACK');
       return res.status(403).json({ success: false, error: 'No tiene permisos para modificar esta reserva' });
+    }
+
+    if (!isAdmin(req) && (lugar_id || club_id || fecha_inicio || fecha_fin || proposito || notas)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, error: 'Solo puedes cancelar tu reserva; contacta al administrador para otros cambios' });
     }
 
     const newFechaInicio = fecha_inicio || existing.fecha_inicio;
     const newFechaFin = fecha_fin || existing.fecha_fin;
     const newLugarId = lugar_id || existing.lugar_id;
+    let newEstado = estado;
+    if (estado && !isAdmin(req)) {
+      newEstado = estado === 'cancelada' ? 'cancelada' : existing.estado;
+    }
 
     if (new Date(newFechaInicio) > new Date(newFechaFin)) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ success: false, error: 'Fechas inválidas' });
     }
 
-    if (newLugarId !== existing.lugar_id || newFechaInicio !== existing.fecha_inicio || newFechaFin !== existing.fecha_fin) {
-      if (await hayConflictoReserva(newLugarId, newFechaInicio, newFechaFin, id)) {
-        return res.status(409).json({ success: false, error: 'Conflicto con otra reserva existente' });
+    const lugaresABloquear = [...new Set([Number(existing.lugar_id), Number(newLugarId)])].sort((a, b) => a - b);
+    await client.query(
+      'SELECT id FROM lugares_camping WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE',
+      [lugaresABloquear]
+    );
+
+    if (newEstado !== 'cancelada') {
+      const conflicto = await client.query(
+        `SELECT id FROM reservas
+         WHERE lugar_id = $1 AND id <> $2 AND estado <> 'cancelada'
+           AND (fecha_inicio, fecha_fin + 1) OVERLAPS ($3::date, $4::date + 1)
+         LIMIT 1`,
+        [newLugarId, id, newFechaInicio, newFechaFin]
+      );
+      if (conflicto.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: 'El lugar ya está reservado en esas fechas' });
       }
     }
 
-    let newEstado = estado;
-    if (estado && !isAdmin(req)) {
-      newEstado = existing.estado;
-    }
-
-    const result = await pool.query(
+    const result = await client.query(
       `UPDATE reservas
        SET lugar_id = COALESCE($1, lugar_id),
            club_id = COALESCE($2, club_id),
@@ -189,11 +235,20 @@ exports.updateReserva = async (req, res) => {
        RETURNING *`,
       [lugar_id, club_id, fecha_inicio, fecha_fin, proposito, notas, newEstado, id]
     );
+    await client.query('COMMIT');
 
     res.json({ success: true, message: 'Reserva actualizada exitosamente', reserva: result.rows[0] });
   } catch (error) {
+    if (client) {
+      await client.query('ROLLBACK').catch(() => {});
+    }
+    if (error.code === '23P01') {
+      return res.status(400).json({ success: false, error: 'El lugar ya está reservado en esas fechas' });
+    }
     console.error('Error actualizando reserva:', error);
     res.status(500).json({ success: false, error: 'Error al actualizar reserva' });
+  } finally {
+    client?.release();
   }
 };
 
@@ -208,7 +263,7 @@ exports.deleteReserva = async (req, res) => {
       return res.status(403).json({ success: false, error: 'No tiene permisos para cancelar esta reserva' });
     }
 
-    await pool.query('DELETE FROM reservas WHERE id = $1', [id]);
+    await pool.query("UPDATE reservas SET estado = 'cancelada' WHERE id = $1", [id]);
     res.json({ success: true, message: 'Reserva cancelada exitosamente' });
   } catch (error) {
     console.error('Error cancelando reserva:', error);

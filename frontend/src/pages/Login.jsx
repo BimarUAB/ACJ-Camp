@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import authService from '../services/authService';
 
 export default function Login() {
   const [mode, setMode] = useState('login');
-  const [form, setForm] = useState({ nombre: '', email: '', password: '' });
+  const [form, setForm] = useState({ nombre: '', email: '', password: '', iglesia_id: '' });
+  const [iglesias, setIglesias] = useState([]);
   const [error, setError] = useState('');
   const { login, register } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    authService.getIglesias().then(({ data }) => setIglesias(data?.iglesias || [])).catch(() => setIglesias([]));
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,6 +33,7 @@ export default function Login() {
       nombre: form.nombre,
       email: form.email,
       password: form.password,
+      iglesia_id: form.iglesia_id || null,
       rol: 'lider',
     });
 
@@ -50,10 +57,16 @@ export default function Login() {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'register' && (
-            <input className="w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+            <>
+              <input required className="w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+              <select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={form.iglesia_id} onChange={(e) => setForm({ ...form, iglesia_id: e.target.value })}>
+                <option value="">Selecciona tu iglesia (opcional)</option>
+                {iglesias.map((iglesia) => <option key={iglesia.id} value={iglesia.id}>{iglesia.nombre}</option>)}
+              </select>
+            </>
           )}
           <input className="w-full rounded-lg border border-slate-300 px-3 py-2" type="email" placeholder="Correo electrónico" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <input className="w-full rounded-lg border border-slate-300 px-3 py-2" type="password" placeholder="Contraseña" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <input required minLength={mode === 'register' ? 8 : undefined} className="w-full rounded-lg border border-slate-300 px-3 py-2" type="password" placeholder="Contraseña" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="w-full rounded-lg bg-adventista-dorado px-4 py-2 font-semibold text-slate-900">Continuar</button>
         </form>

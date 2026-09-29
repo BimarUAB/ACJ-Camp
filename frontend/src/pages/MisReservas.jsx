@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Swal from 'sweetalert2';
 import { CalendarDays, MapPin, Trash2, CheckCircle, Clock, XCircle } from 'lucide-react';
 import reservaService from '../services/reservaService';
 import { useAuth } from '../context/AuthContext';
@@ -43,9 +44,18 @@ export default function MisReservas() {
   }, []);
 
   const cancelar = async (id) => {
-    if (!confirm('¿Estás seguro de cancelar esta reserva?')) return;
+    const confirmation = await Swal.fire({
+      title: '¿Cancelar esta reserva?',
+      text: 'La reserva quedará en tu historial y las fechas se liberarán.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, cancelar',
+      cancelButtonText: 'Volver'
+    });
+    if (!confirmation.isConfirmed) return;
     try {
       await reservaService.update(id, { estado: 'cancelada' });
+      await Swal.fire({ title: 'Reserva cancelada', text: 'Las fechas ya están disponibles.', icon: 'success', confirmButtonText: 'Entendido' });
       cargar();
     } catch (err) {
       setError(err.response?.data?.error || 'Error al cancelar reserva');

@@ -3,8 +3,8 @@
 -- Sistema de Gestión de Campamentos para Clubes Juveniles Adventistas
 -- ============================================================
 
--- Nota: PostGIS es opcional para este proyecto. La distancia se calcula en la aplicación.
--- CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 -- Tabla: IGLESIA
 CREATE TABLE iglesias (
@@ -29,6 +29,8 @@ CREATE TABLE usuarios (
     rol VARCHAR(20) DEFAULT 'lider' CHECK (rol IN ('lider', 'director', 'admin')),
     estado VARCHAR(20) DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo')),
     iglesia_id INTEGER REFERENCES iglesias(id),
+    intentos_login_fallidos INTEGER NOT NULL DEFAULT 0,
+    bloqueado_hasta TIMESTAMPTZ,
     ultimo_login TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -39,7 +41,7 @@ CREATE TABLE clubs (
     nombre VARCHAR(150) NOT NULL,
     tipo VARCHAR(30) CHECK (tipo IN ('conquistadores', 'aventureros', 'ja')),
     iglesia_id INTEGER REFERENCES iglesias(id),
-    director_id INTEGER REFERENCES usuarios(id),
+    director_id INTEGER UNIQUE REFERENCES usuarios(id),
     logo_url VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -76,7 +78,11 @@ CREATE TABLE reservas (
     estado VARCHAR(20) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'confirmada', 'cancelada', 'completada')),
     notas TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fechas_validas CHECK (fecha_fin >= fecha_inicio)
+    CONSTRAINT fechas_validas CHECK (fecha_fin >= fecha_inicio),
+    CONSTRAINT reservas_sin_solapamiento EXCLUDE USING GIST (
+        lugar_id WITH =,
+        daterange(fecha_inicio, fecha_fin, '[]') WITH &&
+    ) WHERE (estado <> 'cancelada')
 );
 
 -- Tabla: RESENA (sin caracteres especiales para evitar problemas de codificación)
@@ -84,8 +90,8 @@ CREATE TABLE resenas (
     id SERIAL PRIMARY KEY,
     lugar_id INTEGER REFERENCES lugares_camping(id) ON DELETE CASCADE,
     usuario_id INTEGER REFERENCES usuarios(id),
-    reserva_id INTEGER REFERENCES reservas(id),
-    calificacion INTEGER CHECK (calificacion >= 1 AND calificacion <= 5),
+    reserva_id INTEGER NOT NULL UNIQUE REFERENCES reservas(id),
+    calificacion INTEGER NOT NULL CHECK (calificacion >= 1 AND calificacion <= 5),
     comentario TEXT,
     fotos JSONB DEFAULT '[]',
     fecha_visita DATE,
@@ -96,6 +102,9 @@ CREATE TABLE resenas (
 CREATE INDEX idx_usuarios_email ON usuarios(email);
 CREATE INDEX idx_usuarios_rol ON usuarios(rol);
 CREATE INDEX idx_lugares_estado ON lugares_camping(estado);
+CREATE INDEX idx_lugares_ubicacion_gist ON lugares_camping USING GIST (
+    (ST_SetSRID(ST_MakePoint(longitud::double precision, latitud::double precision), 4326)::geography)
+);
 CREATE INDEX idx_reservas_fechas ON reservas(fecha_inicio, fecha_fin);
 CREATE INDEX idx_resenas_lugar_id ON resenas(lugar_id);
 CREATE INDEX idx_resenas_usuario_id ON resenas(usuario_id);
@@ -116,10 +125,13 @@ INSERT INTO usuarios (nombre, email, password_hash, telefono, rol, estado, igles
 INSERT INTO usuarios (nombre, email, password_hash, telefono, rol, estado, iglesia_id) VALUES
 ('Director Ejemplo', 'director', '$2a$12$QQftSqjMttO.LX2bSd3N2eUj175MKL0kCzBv08A8yz2KPOA6SJWoa', '70000001', 'director', 'activo', 2);
 
+INSERT INTO usuarios (nombre, email, password_hash, telefono, rol, estado, iglesia_id) VALUES
+('Directora Ejemplo', 'directora', '$2a$12$QQftSqjMttO.LX2bSd3N2eUj175MKL0kCzBv08A8yz2KPOA6SJWoa', '70000002', 'director', 'activo', 2);
+
 -- Clubs de ejemplo
 INSERT INTO clubs (nombre, tipo, iglesia_id, director_id) VALUES
 ('Conquistadores Cochabamba Central', 'conquistadores', 1, 2),
-('Aventureros La Paz Sur', 'aventureros', 2, 2);
+('Aventureros La Paz Sur', 'aventureros', 2, 3);
 
 -- Lugares de camping de ejemplo en Bolivia
 INSERT INTO lugares_camping (nombre, descripcion, direccion, latitud, longitud, propietario, contacto, telefono, servicios, capacidad_maxima, precio_aprox, estado, creado_por) VALUES
@@ -130,7 +142,7 @@ INSERT INTO lugares_camping (nombre, descripcion, direccion, latitud, longitud, 
 
 -- Reservas de ejemplo
 INSERT INTO reservas (lugar_id, club_id, usuario_id, fecha_inicio, fecha_fin, proposito, estado) VALUES
-(1, 1, 2, '2026-09-15', '2026-09-17', 'Campamento de conquistadores', 'confirmada'),
+(1, 1, 2, '2026-09-15', '2026-09-17', 'Campamento de conquistadores', 'completada'),
 (2, 2, 2, '2026-10-05', '2026-10-07', 'Caminata aventureros', 'pendiente');
 
 -- Reseñas de ejemplo

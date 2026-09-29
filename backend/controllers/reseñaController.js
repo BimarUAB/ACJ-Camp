@@ -51,8 +51,8 @@ exports.createReseña = async (req, res) => {
   try {
     const { lugar_id, reserva_id, calificacion, comentario, fotos, fecha_visita } = req.body;
 
-    if (!lugar_id || calificacion == null) {
-      return res.status(400).json({ success: false, error: 'Lugar y calificación son obligatorios' });
+    if (!lugar_id || !reserva_id || calificacion == null) {
+      return res.status(400).json({ success: false, error: 'Lugar, reserva completada y calificación son obligatorios' });
     }
 
     if (calificacion < 1 || calificacion > 5) {
@@ -64,39 +64,28 @@ exports.createReseña = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Lugar no encontrado' });
     }
 
-    // Opcional: verificar que el usuario tiene una reserva completada en ese lugar
-    if (reserva_id) {
-      const reservaResult = await pool.query(
-        'SELECT id, estado FROM reservas WHERE id = $1 AND lugar_id = $2 AND usuario_id = $3',
-        [reserva_id, lugar_id, req.user.id]
-      );
-      if (reservaResult.rows.length === 0) {
-        return res.status(400).json({ success: false, error: 'La reserva no existe o no pertenece al usuario' });
-      }
-      if (reservaResult.rows[0].estado !== 'completada') {
-        return res.status(400).json({ success: false, error: 'Solo se pueden reseñar reservas completadas' });
-      }
-    }
-
-    const yaReseñado = await pool.query(
-      'SELECT id FROM resenas WHERE lugar_id = $1 AND usuario_id = $2',
-      [lugar_id, req.user.id]
+    const reservaResult = await pool.query(
+      'SELECT id FROM reservas WHERE id = $1 AND lugar_id = $2 AND usuario_id = $3 AND estado = \'completada\'',
+      [reserva_id, lugar_id, req.user.id]
     );
-    if (yaReseñado.rows.length > 0) {
-      return res.status(409).json({ success: false, error: 'Ya has reseñado este lugar' });
+    if (reservaResult.rows.length === 0) {
+      return res.status(400).json({ success: false, error: 'Solo se pueden reseñar reservas completadas propias de este lugar' });
     }
 
     const fotosArray = parseJsonArray(fotos);
 
     const result = await pool.query(
       `INSERT INTO resenas (lugar_id, usuario_id, reserva_id, calificacion, comentario, fotos, fecha_visita)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
        RETURNING *`,
       [lugar_id, req.user.id, reserva_id || null, calificacion, comentario, JSON.stringify(fotosArray), fecha_visita || null]
     );
 
     res.status(201).json({ success: true, message: 'Reseña creada exitosamente', reseña: result.rows[0] });
   } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ success: false, error: 'Esta reserva ya tiene una reseña' });
+    }
     console.error('Error creando reseña:', error);
     res.status(500).json({ success: false, error: 'Error al crear reseña' });
   }
