@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import AvailabilityCalendar from 'react-calendar';
+import 'react-calendar/dist/Calendar.css';
 import { MapPin, Users, Star, Phone, Mail, Calendar, ChevronLeft } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -14,6 +16,8 @@ import { useAuth } from '../context/AuthContext';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
 import StarRating from '../components/StarRating';
+import uploadService from '../services/uploadService';
+import clubService from '../services/clubService';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -22,6 +26,28 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
+const fechaComoClave = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const fechaReservaComoClave = (date) => String(date).slice(0, 10);
+const normalizarFotos = (value) => {
+  let fotos = value;
+  if (typeof fotos === 'string') {
+    try {
+      fotos = JSON.parse(fotos);
+    } catch {
+      fotos = [fotos];
+    }
+  }
+  if (!Array.isArray(fotos)) fotos = fotos ? [fotos] : [];
+  return fotos
+    .map((foto) => typeof foto === 'string' ? foto : foto?.secure_url || foto?.url)
+    .filter((url) => typeof url === 'string' && /^(https?:\/\/|\/uploads\/)/i.test(url));
+};
+
+const obtenerListaReseñas = (data) => {
+  const lista = data?.resenas ?? data?.reseñas ?? data;
+  return Array.isArray(lista) ? lista : [];
+};
+
 export default function DetalleLugar() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -29,6 +55,9 @@ export default function DetalleLugar() {
   const [lugar, setLugar] = useState(null);
   const [reseñas, setReseñas] = useState([]);
   const [reservasLugar, setReservasLugar] = useState([]);
+  const [reservasReseñables, setReservasReseñables] = useState([]);
+  const [clubesUsuario, setClubesUsuario] = useState([]);
+  const [clubReservaId, setClubReservaId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -40,6 +69,9 @@ export default function DetalleLugar() {
   const [reservaSuccess, setReservaSuccess] = useState('');
 
   const [calificacion, setCalificacion] = useState(0);
+  const [reservaReseñaId, setReservaReseñaId] = useState('');
+  const [fotosReseña, setFotosReseña] = useState([]);
+  const [subiendoFotos, setSubiendoFotos] = useState(false);
   const [comentario, setComentario] = useState('');
   const [reseñaError, setReseñaError] = useState('');
   const [reseñaSuccess, setReseñaSuccess] = useState('');
@@ -48,17 +80,28 @@ export default function DetalleLugar() {
     try {
       setLoading(true);
       setError('');
-      const [lugarRes, reseñasRes] = await Promise.all([
+      const [lugarRes, reseñasRes, misReservasRes, clubesRes] = await Promise.all([
         lugarService.getById(id),
-        reseñaService.getAll({ lugar_id: id })
+        reseñaService.getAll({ lugar_id: id }),
+        isAuthenticated ? reservaService.getMisReservas() : Promise.resolve({ data: { reservas: [] } }),
+        isAuthenticated ? clubService.getAll() : Promise.resolve({ data: { clubs: [] } })
       ]);
       setLugar(lugarRes.data?.lugar || lugarRes.data);
-      setReseñas(reseñasRes.data?.reseñas || reseñasRes.data || []);
+      const listaReseñas = obtenerListaReseñas(reseñasRes.data);
+      setReseñas(listaReseñas);
+      const clubes = clubesRes.data?.clubs || [];
+      setClubesUsuario(clubes);
+      setClubReservaId((actual) => actual || (clubes[0]?.id ? String(clubes[0].id) : ''));
+      const completadas = (misReservasRes.data?.reservas || []).filter((reserva) =>
+        Number(reserva.lugar_id) === Number(id) &&
+        reserva.estado === 'completada' &&
+        !listaReseñas.some((reseña) => Number(reseña.reserva_id) === Number(reserva.id))
+      );
+      setReservasReseñables(completadas);
+      setReservaReseñaId(completadas[0]?.id ? String(completadas[0].id) : '');
 
-      if (isAuthenticated) {
-        const reservasRes = await reservaService.getByLugar(id);
-        setReservasLugar(reservasRes.data?.reservas || []);
-      }
+      const reservasRes = await reservaService.getByLugar(id);
+      setReservasLugar(reservasRes.data?.reservas || []);
     } catch (err) {
       setError(err.response?.data?.error || 'Error al cargar el lugar');
     } finally {
@@ -76,12 +119,22 @@ export default function DetalleLugar() {
       navigate('/login');
       return;
     }
+    const rangoOcupado = reservasLugar.some((reserva) =>
+      reserva.estado !== 'cancelada' &&
+      fechaReservaComoClave(reserva.fecha_inicio) <= fechaFin &&
+      fechaReservaComoClave(reserva.fecha_fin) >= fechaInicio
+    );
+    if (rangoOcupado) {
+      setReservaError('El rango seleccionado incluye fechas ocupadas. Elige otras fechas en el calendario.');
+      return;
+    }
     try {
       setReservando(true);
       setReservaError('');
       setReservaSuccess('');
       await reservaService.create({
         lugar_id: Number(id),
+        club_id: clubReservaId ? Number(clubReservaId) : null,
         fecha_inicio: fechaInicio,
         fecha_fin: fechaFin,
         proposito
@@ -99,6 +152,37 @@ export default function DetalleLugar() {
     }
   };
 
+  const seleccionarFechaCalendario = (date) => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    const seleccion = fechaComoClave(date);
+    setReservaError('');
+    if (!fechaInicio || fechaFin) {
+      setFechaInicio(seleccion);
+      setFechaFin('');
+      return;
+    }
+    if (seleccion < fechaInicio) {
+      setFechaInicio(seleccion);
+      setFechaFin('');
+      return;
+    }
+    const rangoOcupado = reservasLugar.some((reserva) =>
+      reserva.estado !== 'cancelada' &&
+      fechaReservaComoClave(reserva.fecha_inicio) <= seleccion &&
+      fechaReservaComoClave(reserva.fecha_fin) >= fechaInicio
+    );
+    if (rangoOcupado) {
+      setReservaError('Ese rango atraviesa fechas ocupadas. Selecciona otro día de inicio.');
+      setFechaInicio(seleccion);
+      setFechaFin('');
+      return;
+    }
+    setFechaFin(seleccion);
+  };
+
   const enviarReseña = async (e) => {
     e.preventDefault();
     if (!isAuthenticated) {
@@ -110,14 +194,18 @@ export default function DetalleLugar() {
       setReseñaSuccess('');
       await reseñaService.create({
         lugar_id: Number(id),
+        reserva_id: Number(reservaReseñaId),
         calificacion,
-        comentario
+        comentario,
+        fotos: fotosReseña
       });
       setReseñaSuccess('Reseña publicada exitosamente.');
       setCalificacion(0);
       setComentario('');
+      setFotosReseña([]);
+      setReservaReseñaId('');
       const reseñasRes = await reseñaService.getAll({ lugar_id: id });
-      setReseñas(reseñasRes.data?.reseñas || []);
+      setReseñas(obtenerListaReseñas(reseñasRes.data));
     } catch (err) {
       setReseñaError(err.response?.data?.error || 'Error al publicar la reseña');
     }
@@ -126,6 +214,7 @@ export default function DetalleLugar() {
   if (loading) return <Loading message="Cargando lugar..." />;
   if (error) return <div className="p-8"><ErrorMessage message={error} onRetry={cargar} /></div>;
   if (!lugar) return <div className="p-8 text-center text-slate-500">Lugar no encontrado.</div>;
+  const fotosLugar = normalizarFotos(lugar.fotos);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -150,6 +239,24 @@ export default function DetalleLugar() {
           </span>
         </div>
 
+        <section className="mt-6 border-y border-slate-200 py-5" aria-label="Fotos del campamento">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="font-semibold text-slate-900">Fotos del campamento</h2>
+            {fotosLugar.length > 0 && <span className="text-xs text-slate-500">{fotosLugar.length} {fotosLugar.length === 1 ? 'foto' : 'fotos'}</span>}
+          </div>
+          {fotosLugar.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {fotosLugar.map((foto, index) => (
+                <a key={`${foto}-${index}`} href={foto} target="_blank" rel="noreferrer" className="group block overflow-hidden rounded-lg bg-slate-100">
+                  <img src={foto} alt={`${lugar.nombre}, foto ${index + 1}`} className="aspect-[4/3] w-full object-cover transition duration-200 group-hover:scale-[1.02]" loading="lazy" />
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">Este campamento todavía no tiene fotos.</p>
+          )}
+        </section>
+
         <div className="mt-6 grid gap-6 md:grid-cols-2">
           <div className="space-y-4">
             <h2 className="font-semibold text-slate-800">Detalles del lugar</h2>
@@ -167,7 +274,7 @@ export default function DetalleLugar() {
                 <p className="text-slate-500">Calificación</p>
                 <p className="font-semibold text-slate-900 flex items-center gap-1">
                   <Star className="h-4 w-4 fill-adventista-dorado text-adventista-dorado" />
-                  {lugar.promedio_calificacion ? Number(lugar.promedio_calificacion).toFixed(1) : 'Sin reseñas'} ({lugar.total_reseñas})
+                  {lugar.promedio_calificacion ? Number(lugar.promedio_calificacion).toFixed(1) : 'Sin reseñas'} ({lugar.total_resenas})
                 </p>
               </div>
               <div className="rounded-xl bg-slate-50 p-3">
@@ -216,12 +323,22 @@ export default function DetalleLugar() {
             </p>
           ) : (
             <form onSubmit={reservar} className="space-y-3">
+              {user?.rol !== 'admin' && (
+                <label className="block text-sm font-medium text-slate-700">
+                  Club
+                  <select required value={clubReservaId} onChange={(event) => setClubReservaId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+                    <option value="">Selecciona un club</option>
+                    {clubesUsuario.map((club) => <option key={club.id} value={club.id}>{club.nombre}</option>)}
+                  </select>
+                </label>
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Desde</label>
-                  <input
+                    <input
                     type="date"
                     required
+                      min={fechaComoClave(new Date())}
                     value={fechaInicio}
                     onChange={(e) => setFechaInicio(e.target.value)}
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -232,6 +349,7 @@ export default function DetalleLugar() {
                   <input
                     type="date"
                     required
+                    min={fechaInicio || fechaComoClave(new Date())}
                     value={fechaFin}
                     onChange={(e) => setFechaFin(e.target.value)}
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -251,7 +369,7 @@ export default function DetalleLugar() {
               {reservaSuccess && <p className="text-sm text-green-600">{reservaSuccess}</p>}
               <button
                 type="submit"
-                disabled={reservando}
+                disabled={reservando || (user?.rol !== 'admin' && !clubReservaId)}
                 className="w-full rounded-lg bg-adventista-azul py-2 font-semibold text-white hover:bg-adventista-azul/90 disabled:opacity-50"
               >
                 {reservando ? 'Reservando...' : 'Solicitar reserva'}
@@ -259,18 +377,39 @@ export default function DetalleLugar() {
             </form>
           )}
 
-          {reservasLugar.length > 0 && (
-            <div className="mt-6">
-              <h3 className="mb-2 font-semibold text-slate-800">Reservas confirmadas próximas</h3>
-              <ul className="space-y-2">
-                {reservasLugar.slice(0, 5).map((r) => (
-                  <li key={r.id} className="rounded-lg bg-slate-50 p-2 text-sm">
-                    {r.fecha_inicio} → {r.fecha_fin} <span className="ml-2 inline-block rounded bg-adventista-dorado/20 px-2 py-0.5 text-xs">{r.estado}</span>
-                  </li>
-                ))}
-              </ul>
+          <div className="mt-6 border-t border-slate-200 pt-5">
+            <h3 className="mb-3 font-semibold text-slate-800">Calendario de disponibilidad</h3>
+            <AvailabilityCalendar
+              locale="es-BO"
+              onClickDay={seleccionarFechaCalendario}
+              tileDisabled={({ date, view }) => {
+                if (view !== 'month') return false;
+                const fecha = fechaComoClave(date);
+                const hoy = fechaComoClave(new Date());
+                return fecha < hoy || reservasLugar.some((reserva) =>
+                  reserva.estado !== 'cancelada' &&
+                  fechaReservaComoClave(reserva.fecha_inicio) <= fecha &&
+                  fechaReservaComoClave(reserva.fecha_fin) >= fecha
+                );
+              }}
+              tileClassName={({ date, view }) => {
+                if (view !== 'month') return undefined;
+                const dateKey = fechaComoClave(date);
+                const reserva = reservasLugar.find((item) => item.estado !== 'cancelada' &&
+                  fechaReservaComoClave(item.fecha_inicio) <= dateKey && fechaReservaComoClave(item.fecha_fin) >= dateKey);
+                if (reserva) return `calendar-${reserva.estado}`;
+                if (dateKey === fechaInicio) return 'calendar-seleccion-inicio';
+                if (dateKey === fechaFin) return 'calendar-seleccion-fin';
+                return undefined;
+              }}
+            />
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-600" aria-label="Leyenda del calendario">
+              <span className="inline-flex items-center gap-1.5"><i className="calendar-legend-dot calendar-legend-pendiente" /> Pendiente</span>
+              <span className="inline-flex items-center gap-1.5"><i className="calendar-legend-dot calendar-legend-confirmada" /> Confirmada</span>
+              <span className="inline-flex items-center gap-1.5"><i className="calendar-legend-dot calendar-legend-seleccion" /> Fechas elegidas</span>
             </div>
-          )}
+            <p className="mt-2 text-xs text-slate-500">Selecciona un día de inicio y otro de fin. Las fechas ocupadas y pasadas no se pueden elegir.</p>
+          </div>
         </div>
 
         <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
@@ -292,9 +431,15 @@ export default function DetalleLugar() {
             </div>
           )}
 
-          {isAuthenticated && (
+          {isAuthenticated && reservasReseñables.length > 0 && (
             <form onSubmit={enviarReseña} className="mt-6 rounded-xl bg-slate-50 p-4">
               <h3 className="mb-2 font-semibold text-slate-800">Escribir reseña</h3>
+              <label className="mb-3 block text-sm font-medium text-slate-700">
+                Visita completada
+                <select required value={reservaReseñaId} onChange={(event) => setReservaReseñaId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-normal">
+                  {reservasReseñables.map((reserva) => <option key={reserva.id} value={reserva.id}>{reserva.fecha_inicio} a {reserva.fecha_fin}</option>)}
+                </select>
+              </label>
               <div className="mb-3">
                 <label className="block text-sm font-medium text-slate-700">Calificación</label>
                 <div className="mt-1">
@@ -308,15 +453,37 @@ export default function DetalleLugar() {
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
                 rows={3}
               />
+              <label className="mt-3 block text-sm font-medium text-slate-700">
+                Fotos de la visita
+                <input type="file" accept="image/*" multiple onChange={async (event) => {
+                  const files = Array.from(event.target.files || []);
+                  if (!files.length) return;
+                  try {
+                    setSubiendoFotos(true);
+                    const uploads = await Promise.all(files.map((file) => uploadService.image(file)));
+                    setFotosReseña((actuales) => [...actuales, ...uploads.map((upload) => upload.data.url)]);
+                  } catch (err) {
+                    setReseñaError(err.response?.data?.error || 'No se pudieron subir las fotos.');
+                  } finally {
+                    setSubiendoFotos(false);
+                    event.target.value = '';
+                  }
+                }} className="mt-1 block w-full text-sm" />
+              </label>
+              {fotosReseña.length > 0 && <p className="mt-1 text-xs text-slate-600">{fotosReseña.length} foto(s) preparada(s)</p>}
               {reseñaError && <p className="mt-2 text-sm text-red-600">{reseñaError}</p>}
               {reseñaSuccess && <p className="mt-2 text-sm text-green-600">{reseñaSuccess}</p>}
               <button
                 type="submit"
+                disabled={subiendoFotos || !reservaReseñaId || calificacion < 1}
                 className="mt-3 w-full rounded-lg bg-adventista-dorado py-2 font-semibold text-slate-900 hover:bg-adventista-dorado/90"
               >
                 Publicar reseña
               </button>
             </form>
+          )}
+          {isAuthenticated && reservasReseñables.length === 0 && (
+            <p className="mt-6 border-t border-slate-200 pt-4 text-sm text-slate-600">Las reseñas están disponibles después de completar una reserva en este lugar.</p>
           )}
         </div>
       </div>

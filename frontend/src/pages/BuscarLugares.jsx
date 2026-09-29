@@ -1,7 +1,19 @@
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import { Link } from 'react-router-dom';
-import { Search, Filter, Star, MapPin, Users } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, CircleMarker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import {
+  Info,
+  Layers,
+  LocateFixed,
+  Map as MapIcon,
+  MapPin,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Star,
+  Users,
+  X,
+} from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -10,6 +22,8 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import lugarService from '../services/lugarService';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
+import { useAuth } from '../context/AuthContext';
+import mapaService from '../services/mapaService';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -19,31 +33,143 @@ L.Icon.Default.mergeOptions({
 });
 
 const SERVICIOS_OPCIONES = ['agua', 'baños', 'electricidad', 'fogata', 'senderos', 'rio', 'carpa', 'cocina', 'estacionamiento'];
+const CENTRO_LA_PAZ = [-16.5837, -68.1432];
+const CAPAS = {
+  osm: {
+    nombre: 'OpenStreetMap',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; colaboradores de OpenStreetMap',
+    subdomains: 'abc',
+  },
+  humanitario: {
+    nombre: 'OpenStreetMap Humanitario',
+    url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+    attribution: '&copy; colaboradores de OpenStreetMap, estilo HOT',
+    subdomains: 'abc',
+  },
+};
+
+function MapCamera({ center, zoom }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const currentCenter = map.getCenter();
+    const centerChanged = Math.abs(currentCenter.lat - center[0]) > 0.00001
+      || Math.abs(currentCenter.lng - center[1]) > 0.00001;
+    if (centerChanged || map.getZoom() !== zoom) {
+      map.setView(center, zoom, { animate: true });
+    }
+  }, [map, center[0], center[1], zoom]);
+
+  return null;
+}
+
+function MapViewportSync({ onMove }) {
+  const map = useMapEvents({
+    moveend: (event) => {
+      const currentMap = event.target;
+      const center = currentMap.getCenter();
+      const bounds = currentMap.getBounds();
+      onMove(
+        [Number(center.lat.toFixed(4)), Number(center.lng.toFixed(4))],
+        [bounds.getSouth(), bounds.getWest(), bounds.getNorth(), bounds.getEast()],
+        currentMap.getZoom()
+      );
+    },
+    zoomend: (event) => {
+      const currentMap = event.target;
+      const center = currentMap.getCenter();
+      const bounds = currentMap.getBounds();
+      onMove(
+        [Number(center.lat.toFixed(4)), Number(center.lng.toFixed(4))],
+        [bounds.getSouth(), bounds.getWest(), bounds.getNorth(), bounds.getEast()],
+        currentMap.getZoom()
+      );
+    },
+  });
+
+  useEffect(() => {
+    const bounds = map.getBounds();
+    onMove(
+      [Number(map.getCenter().lat.toFixed(4)), Number(map.getCenter().lng.toFixed(4))],
+      [bounds.getSouth(), bounds.getWest(), bounds.getNorth(), bounds.getEast()],
+      map.getZoom()
+    );
+  }, [map, onMove]);
+
+  return null;
+}
 
 export default function BuscarLugares() {
+  const { user } = useAuth();
+  const initialCenter = user?.iglesia_latitud != null && user?.iglesia_longitud != null
+    ? [Number(user.iglesia_latitud), Number(user.iglesia_longitud)]
+    : CENTRO_LA_PAZ;
   const [lugares, setLugares] = useState([]);
+  const [campingsOsm, setCampingsOsm] = useState([]);
+  const [campingsOsmVisibles, setCampingsOsmVisibles] = useState(true);
+  const [campingsOsmLoading, setCampingsOsmLoading] = useState(false);
+  const [campingsOsmError, setCampingsOsmError] = useState('');
+  const [actualizarOsm, setActualizarOsm] = useState(0);
+  const [mapBounds, setMapBounds] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  const [filtro, setFiltro] = useState('');
+  const [mensajeUbicacion, setMensajeUbicacion] = useState('');
+  const [panel, setPanel] = useState('lugares');
+  const [panelAbierto, setPanelAbierto] = useState(true);
+  const [busqueda, setBusqueda] = useState('');
   const [servicios, setServicios] = useState([]);
   const [capacidadMin, setCapacidadMin] = useState('');
   const [calificacionMin, setCalificacionMin] = useState('');
-  const [lat, setLat] = useState('');
-  const [lng, setLng] = useState('');
-  const [radio, setRadio] = useState('');
+  const [lat, setLat] = useState(String(initialCenter[0]));
+  const [lng, setLng] = useState(String(initialCenter[1]));
+  const [radio, setRadio] = useState('50');
+  const [mapCenter, setMapCenter] = useState(initialCenter);
+  const [mapZoom, setMapZoom] = useState(12);
+  const [capa, setCapa] = useState('osm');
+  const [lugarSeleccionado, setLugarSeleccionado] = useState(null);
 
-  const cargar = async () => {
+  useEffect(() => {
+    if (!campingsOsmVisibles || !mapBounds) return undefined;
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      try {
+        setCampingsOsmLoading(true);
+        setCampingsOsmError('');
+        const { data } = await mapaService.getCampingsOsm(mapBounds, {
+          signal: controller.signal,
+          actualizar: actualizarOsm > 0 ? 'true' : undefined,
+        });
+        setCampingsOsm(data?.campings || []);
+      } catch (err) {
+        if (err.code !== 'ERR_CANCELED' && err.name !== 'CanceledError') {
+          setCampingsOsmError(err.response?.data?.error || 'No se pudieron actualizar los puntos de acampada.');
+        }
+      } finally {
+        if (!controller.signal.aborted) setCampingsOsmLoading(false);
+      }
+    }, actualizarOsm > 0 ? 0 : 650);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [campingsOsmVisibles, mapBounds, actualizarOsm]);
+
+  const cargar = async (origen = {}) => {
+    const latitud = origen.lat ?? lat;
+    const longitud = origen.lng ?? lng;
     try {
       setLoading(true);
       setError('');
-      const params = {};
-      if (lat && lng) {
-        params.lat = lat;
-        params.lng = lng;
-        params.radio = radio || 50;
-      }
-      if (servicios.length > 0) params.servicios = servicios;
+      const params = {
+        lat: latitud,
+        lng: longitud,
+        radio: origen.radio ?? radio,
+      };
+      if (busqueda.trim()) params.busqueda = busqueda.trim();
+      if (servicios.length) params.servicios = servicios;
       if (capacidadMin) params.capacidad_min = capacidadMin;
       if (calificacionMin) params.calificacion_min = calificacionMin;
 
@@ -60,189 +186,334 @@ export default function BuscarLugares() {
     cargar();
   }, []);
 
-  const aplicarFiltros = (e) => {
-    e.preventDefault();
-    cargar();
+  const aplicarFiltros = (event) => {
+    event.preventDefault();
+    const latitud = Number(lat);
+    const longitud = Number(lng);
+    setMapCenter([latitud, longitud]);
+    setMapZoom(Number(radio) >= 200 ? 6 : Number(radio) >= 100 ? 8 : Number(radio) > 50 ? 10 : 12);
+    cargar({ lat: latitud, lng: longitud });
+    setPanel('lugares');
   };
 
-  const toggleServicio = (s) => {
-    setServicios((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  const buscarEnMapa = () => {
+    const [latitud, longitud] = mapCenter;
+    setLat(String(latitud));
+    setLng(String(longitud));
+    cargar({ lat: latitud, lng: longitud });
+    setPanel('lugares');
+    setPanelAbierto(true);
   };
 
-  const filtrados = lugares.filter((lugar) => {
-    const texto = filtro.toLowerCase();
-    return (
-      (lugar.nombre || '').toLowerCase().includes(texto) ||
-      (lugar.direccion || '').toLowerCase().includes(texto) ||
-      (lugar.descripcion || '').toLowerCase().includes(texto)
+  const ampliarBusqueda = () => {
+    setRadio('250');
+    setMapZoom(7);
+    cargar({ lat: mapCenter[0], lng: mapCenter[1], radio: 250 });
+  };
+
+  const cambiarServicio = (servicio) => {
+    setServicios((actuales) => actuales.includes(servicio)
+      ? actuales.filter((item) => item !== servicio)
+      : [...actuales, servicio]);
+  };
+
+  const centrarUbicacion = () => {
+    if (!navigator.geolocation) {
+      setMensajeUbicacion('Este dispositivo no permite compartir la ubicación.');
+      return;
+    }
+    setMensajeUbicacion('Buscando tu ubicación...');
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const nuevaUbicacion = [coords.latitude, coords.longitude];
+        setLat(String(coords.latitude));
+        setLng(String(coords.longitude));
+        setMapCenter(nuevaUbicacion);
+        setMapZoom(12);
+        setMensajeUbicacion('');
+        cargar({ lat: coords.latitude, lng: coords.longitude });
+      },
+      () => setMensajeUbicacion('No se pudo obtener la ubicación. Revisa el permiso del navegador.'),
+      { enableHighAccuracy: true, timeout: 10000 }
     );
-  });
+  };
 
-  const mapCenter = lat && lng ? [Number(lat), Number(lng)] : [-17.3895, -66.1568];
+  const seleccionarLugar = (lugar) => {
+    setLugarSeleccionado(lugar.id);
+    setMapCenter([Number(lugar.latitud), Number(lugar.longitud)]);
+    setMapZoom(13);
+    setPanelAbierto(false);
+  };
+
+  const seleccionarCampingOsm = (camping) => {
+    setMapCenter([camping.latitud, camping.longitud]);
+    setMapZoom(15);
+    setPanelAbierto(false);
+  };
+
+  const herramientas = [
+    { id: 'lugares', label: 'Campamentos', icon: MapPin },
+    { id: 'filtros', label: 'Filtros', icon: SlidersHorizontal },
+    { id: 'capas', label: 'Capas del mapa', icon: Layers },
+    { id: 'info', label: 'Información', icon: Info },
+  ];
+  const capaActual = CAPAS[capa];
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Explorar lugares</h1>
-        <p className="text-slate-600">Busca campings disponibles y revisa su ubicación en el mapa.</p>
-      </div>
-
-      <form onSubmit={aplicarFiltros} className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input
-              value={filtro}
-              onChange={(e) => setFiltro(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3"
-              placeholder="Buscar por nombre o ubicación"
-            />
-          </div>
-          <input
-            type="number"
-            value={capacidadMin}
-            onChange={(e) => setCapacidadMin(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2"
-            placeholder="Capacidad mínima"
-          />
-          <select
-            value={calificacionMin}
-            onChange={(e) => setCalificacionMin(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2"
+    <main className="camp-map-shell" aria-label="Mapa de lugares de campamento">
+      <MapContainer center={mapCenter} zoom={mapZoom} scrollWheelZoom className="camp-map-canvas">
+        <MapCamera center={mapCenter} zoom={mapZoom} />
+        <MapViewportSync onMove={(center, bounds, zoom) => {
+          setMapCenter((current) => current[0] === center[0] && current[1] === center[1] ? current : center);
+          setMapBounds((current) => current && current.every((value, index) => Math.abs(value - bounds[index]) < 0.0001) ? current : bounds);
+          setMapZoom((current) => current === zoom ? current : zoom);
+        }} />
+        <TileLayer url={capaActual.url} attribution={capaActual.attribution} subdomains={capaActual.subdomains} />
+        {campingsOsmVisibles && campingsOsm.map((camping) => (
+          <CircleMarker
+            key={camping.id}
+            center={[camping.latitud, camping.longitud]}
+            radius={7}
+            pathOptions={{ color: '#176b55', fillColor: '#2a9a75', fillOpacity: 0.9, weight: 2 }}
           >
-            <option value="">Calificación mínima</option>
-            <option value="5">5 estrellas</option>
-            <option value="4">4+ estrellas</option>
-            <option value="3">3+ estrellas</option>
-            <option value="2">2+ estrellas</option>
-            <option value="1">1+ estrellas</option>
-          </select>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              step="0.0001"
-              value={lat}
-              onChange={(e) => setLat(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              placeholder="Lat"
-            />
-            <input
-              type="number"
-              step="0.0001"
-              value={lng}
-              onChange={(e) => setLng(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              placeholder="Lng"
-            />
-            <input
-              type="number"
-              value={radio}
-              onChange={(e) => setRadio(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
-              placeholder="Km"
-            />
-          </div>
-        </div>
+            <Popup>
+              <div className="camp-map-popup">
+                <p className="camp-map-popup__eyebrow">OpenStreetMap · {camping.tipo === 'caravan_site' ? 'Caravanas' : 'Camping'}</p>
+                <h2>{camping.nombre}</h2>
+                {camping.operador && <p>Operador: {camping.operador}</p>}
+                {camping.acceso && <p>Acceso: {camping.acceso}</p>}
+                <a href={camping.osm_url} target="_blank" rel="noreferrer">Ver y editar en OpenStreetMap <span aria-hidden="true">↗</span></a>
+              </div>
+            </Popup>
+          </CircleMarker>
+        ))}
+        {lugares.map((lugar) => (
+          <Marker key={lugar.id} position={[Number(lugar.latitud), Number(lugar.longitud)]}>
+            <Popup>
+              <div className="camp-map-popup">
+                <p className="camp-map-popup__eyebrow">Lugar de campamento</p>
+                <h2>{lugar.nombre}</h2>
+                <p>{lugar.direccion || 'Ubicación registrada'}</p>
+                <div className="camp-map-popup__meta">
+                  {Number(lugar.promedio_calificacion) > 0 && <span><Star size={14} fill="currentColor" /> {Number(lugar.promedio_calificacion).toFixed(1)}</span>}
+                  {lugar.distancia_km != null && <span>{lugar.distancia_km} km</span>}
+                  {lugar.capacidad_maxima && <span><Users size={14} /> {lugar.capacidad_maxima}</span>}
+                </div>
+                <Link to={`/lugar/${lugar.id}`}>Ver campamento <span aria-hidden="true">→</span></Link>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+      </MapContainer>
 
-        <div className="mt-4">
-          <p className="mb-2 text-sm font-medium text-slate-700">Servicios</p>
-          <div className="flex flex-wrap gap-2">
-            {SERVICIOS_OPCIONES.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => toggleServicio(s)}
-                className={`rounded-full px-3 py-1 text-sm capitalize ${
-                  servicios.includes(s)
-                    ? 'bg-adventista-azul text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-4 flex justify-end">
+      <aside className={`camp-map-sidebar ${panelAbierto ? 'is-open' : 'is-closed'}`}>
+        <div className="camp-map-tools" role="toolbar" aria-label="Herramientas del mapa">
+          {herramientas.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              title={label}
+              aria-label={label}
+              aria-pressed={panel === id && panelAbierto}
+              className={panel === id && panelAbierto ? 'is-active' : ''}
+              onClick={() => {
+                if (panel === id && panelAbierto) setPanelAbierto(false);
+                else { setPanel(id); setPanelAbierto(true); }
+              }}
+            >
+              <Icon size={19} strokeWidth={1.8} />
+            </button>
+          ))}
           <button
-            type="submit"
-            className="flex items-center gap-2 rounded-lg bg-adventista-azul px-4 py-2 font-semibold text-white hover:bg-adventista-azul/90"
+            type="button"
+            className="camp-map-tools__close"
+            title={panelAbierto ? 'Cerrar panel' : 'Abrir panel'}
+            aria-label={panelAbierto ? 'Cerrar panel' : 'Abrir panel'}
+            onClick={() => setPanelAbierto((abierto) => !abierto)}
           >
-            <Filter className="h-4 w-4" /> Aplicar filtros
+            {panelAbierto ? <X size={17} /> : <MapIcon size={18} />}
           </button>
         </div>
-      </form>
 
-      {error && <ErrorMessage message={error} onRetry={cargar} />}
-
-      {loading ? (
-        <Loading message="Cargando lugares..." />
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-2xl bg-white p-4 shadow-sm">
-            <MapContainer center={mapCenter} zoom={lat && lng ? 10 : 6} scrollWheelZoom={false}>
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution="&copy; OpenStreetMap contributors"
-              />
-              {filtrados.map((lugar) => (
-                <Marker key={lugar.id} position={[lugar.latitud, lugar.longitud]}>
-                  <Popup>
-                    <div className="text-sm">
-                      <p className="font-semibold">{lugar.nombre}</p>
-                      <p>{lugar.direccion}</p>
-                      {lugar.distancia_km && <p className="text-adventista-azul">{lugar.distancia_km} km</p>}
-                      <Link to={`/lugar/${lugar.id}`} className="text-adventista-azul underline">Ver detalle</Link>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-            </MapContainer>
-          </div>
-
-          <div className="space-y-4">
-            {filtrados.map((lugar) => (
-              <Link
-                key={lugar.id}
-                to={`/lugar/${lugar.id}`}
-                className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="font-semibold text-slate-900">{lugar.nombre}</h2>
-                    <div className="mt-1 flex items-center gap-1 text-sm text-slate-500">
-                      <MapPin className="h-3.5 w-3.5" />
-                      {lugar.direccion || 'Sin dirección'}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {Array.isArray(lugar.servicios) && lugar.servicios.slice(0, 4).map((s) => (
-                        <span key={s} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-700">
-                          {s}
+        {panelAbierto && (
+          <div className="camp-map-panel">
+            {panel === 'lugares' && (
+              <>
+                <header className="camp-map-panel__header">
+                  <p className="camp-map-kicker">ACJ CAMP · EXPLORAR</p>
+                  <h1>Campamentos</h1>
+                  <p>{lugares.length} sitios ACJ · {campingsOsm.length} puntos OSM en el mapa</p>
+                </header>
+                <form className="camp-map-search" onSubmit={aplicarFiltros}>
+                  <Search size={17} aria-hidden="true" />
+                  <input value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Nombre o localidad" aria-label="Buscar campamento" />
+                  <button type="submit" aria-label="Buscar"><Search size={17} /></button>
+                </form>
+                <div className="camp-map-nearby-row">
+                  <button type="button" className="camp-map-nearby" onClick={buscarEnMapa}>
+                    <MapPin size={15} /> Buscar en esta zona
+                    <Search size={15} />
+                  </button>
+                  <button type="button" className="camp-map-nearby-filter" onClick={() => setPanel('filtros')} title="Abrir filtros" aria-label="Abrir filtros">
+                    <SlidersHorizontal size={16} />
+                  </button>
+                </div>
+                {mensajeUbicacion && <p className="camp-map-feedback" role="status">{mensajeUbicacion}</p>}
+                {error && <ErrorMessage message={error} onRetry={cargar} />}
+                {loading ? <Loading message="Buscando campamentos..." /> : (
+                  <div className="camp-map-results" aria-live="polite">
+                    {lugares.map((lugar) => (
+                      <button
+                        type="button"
+                        key={lugar.id}
+                        className={`camp-map-result ${lugarSeleccionado === lugar.id ? 'is-selected' : ''}`}
+                        onClick={() => seleccionarLugar(lugar)}
+                      >
+                        <span className="camp-map-result__pin"><MapPin size={17} /></span>
+                        <span className="camp-map-result__body">
+                          <strong>{lugar.nombre}</strong>
+                          <span>{lugar.direccion || 'Dirección no registrada'}</span>
+                          <span className="camp-map-result__meta">
+                            {lugar.distancia_km != null && <span>{lugar.distancia_km} km</span>}
+                            {Number(lugar.promedio_calificacion) > 0 && <span><Star size={12} fill="currentColor" /> {Number(lugar.promedio_calificacion).toFixed(1)}</span>}
+                            {lugar.capacidad_maxima && <span><Users size={12} /> {lugar.capacidad_maxima}</span>}
+                          </span>
                         </span>
+                        <Link to={`/lugar/${lugar.id}`} aria-label={`Ver ${lugar.nombre}`} onClick={(event) => event.stopPropagation()}>→</Link>
+                      </button>
+                    ))}
+                    {lugares.length === 0 && !error && (
+                      <div className="camp-map-empty">
+                        <p>No hay campamentos registrados dentro de {radio} km.</p>
+                        {Number(radio) < 250 && <button type="button" onClick={ampliarBusqueda}>Ampliar búsqueda a 250 km</button>}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {campingsOsm.length > 0 && (
+                  <section className="camp-map-osm-results" aria-label="Sitios de acampada de OpenStreetMap">
+                    <h2>Sitios de acampada OSM</h2>
+                    {campingsOsm.map((camping) => (
+                      <div className="camp-map-osm-result" key={camping.id}>
+                        <button type="button" onClick={() => seleccionarCampingOsm(camping)}>
+                          <span className="camp-map-osm-result__dot" />
+                          <span><strong>{camping.nombre}</strong><small>{camping.tipo === 'caravan_site' ? 'Sitio para caravanas' : 'Camping comunitario'}</small></span>
+                        </button>
+                        <a href={camping.osm_url} target="_blank" rel="noreferrer" aria-label={`Abrir ${camping.nombre} en OpenStreetMap`}>↗</a>
+                      </div>
+                    ))}
+                  </section>
+                )}
+              </>
+            )}
+
+            {panel === 'filtros' && (
+              <>
+                <header className="camp-map-panel__header">
+                  <p className="camp-map-kicker">ACJ CAMP · EXPLORAR</p>
+                  <h1>Filtros del mapa</h1>
+                  <p>Refina los sitios que aparecen en el mapa.</p>
+                </header>
+                <form className="camp-map-filters" onSubmit={aplicarFiltros}>
+                  <div className="camp-map-filter-grid">
+                    <label>Latitud
+                      <input required type="number" min="-90" max="90" step="any" value={lat} onChange={(event) => setLat(event.target.value)} />
+                    </label>
+                    <label>Longitud
+                      <input required type="number" min="-180" max="180" step="any" value={lng} onChange={(event) => setLng(event.target.value)} />
+                    </label>
+                  </div>
+                  <label>Radio de búsqueda <span>{radio} km</span>
+                    <input type="range" min="10" max="250" step="10" value={radio} onChange={(event) => setRadio(event.target.value)} />
+                  </label>
+                  <label>Capacidad mínima
+                    <input type="number" min="1" value={capacidadMin} onChange={(event) => setCapacidadMin(event.target.value)} placeholder="Cualquier capacidad" />
+                  </label>
+                  <label>Calificación mínima
+                    <select value={calificacionMin} onChange={(event) => setCalificacionMin(event.target.value)}>
+                      <option value="">Cualquiera</option>
+                      <option value="5">5 estrellas</option>
+                      <option value="4">4 o más</option>
+                      <option value="3">3 o más</option>
+                      <option value="2">2 o más</option>
+                      <option value="1">1 o más</option>
+                    </select>
+                  </label>
+                  <fieldset>
+                    <legend>Servicios disponibles</legend>
+                    <div className="camp-map-service-list">
+                      {SERVICIOS_OPCIONES.map((servicio) => (
+                        <label key={servicio}>
+                          <input type="checkbox" checked={servicios.includes(servicio)} onChange={() => cambiarServicio(servicio)} />
+                          <span>{servicio}</span>
+                        </label>
                       ))}
                     </div>
-                    <div className="mt-2 flex items-center gap-3 text-sm text-slate-600">
-                      <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {lugar.capacidad_maxima}</span>
-                      {lugar.promedio_calificacion > 0 && (
-                        <span className="flex items-center gap-1 text-adventista-dorado">
-                          <Star className="h-3.5 w-3.5 fill-adventista-dorado" />
-                          {Number(lugar.promedio_calificacion).toFixed(1)}
-                        </span>
-                      )}
-                    </div>
+                  </fieldset>
+                  <div className="camp-map-filter-actions">
+                    <button type="button" className="camp-map-secondary" onClick={() => {
+                      setServicios([]); setCapacidadMin(''); setCalificacionMin(''); setRadio('50');
+                    }}>Limpiar</button>
+                    <button type="submit" className="camp-map-primary">Aplicar filtros</button>
                   </div>
+                </form>
+                <button type="button" className="camp-map-locate-inline" onClick={centrarUbicacion}><LocateFixed size={16} /> Usar mi ubicación actual</button>
+              </>
+            )}
+
+            {panel === 'capas' && (
+              <>
+                <header className="camp-map-panel__header">
+                  <p className="camp-map-kicker">PRESENTACIÓN</p>
+                  <h1>Capas del mapa</h1>
+                  <p>Selecciona el mapa base.</p>
+                </header>
+                <div className="camp-map-layer-list">
+                  {Object.entries(CAPAS).map(([id, opcion]) => (
+                    <label key={id} className={capa === id ? 'is-selected' : ''}>
+                      <input type="radio" name="capa" value={id} checked={capa === id} onChange={() => setCapa(id)} />
+                      <span><strong>{opcion.nombre}</strong><small>Datos abiertos de OpenStreetMap</small></span>
+                    </label>
+                  ))}
                 </div>
-              </Link>
-            ))}
-            {filtrados.length === 0 && !error && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-slate-500">
-                No se encontraron lugares con esos filtros.
-              </div>
+                <div className="camp-map-overlay-control">
+                  <label className="camp-map-overlay-toggle">
+                    <input type="checkbox" checked={campingsOsmVisibles} onChange={(event) => setCampingsOsmVisibles(event.target.checked)} />
+                    <span><strong>Puntos de acampada OSM</strong><small>Sitios etiquetados por la comunidad</small></span>
+                  </label>
+                  <div className="camp-map-overlay-status" role="status">
+                    <span>{campingsOsmLoading ? 'Actualizando puntos...' : `${campingsOsm.length} puntos en el área visible`}</span>
+                    <button type="button" disabled={!campingsOsmVisibles || campingsOsmLoading} onClick={() => setActualizarOsm((version) => version + 1)} title="Actualizar puntos de OpenStreetMap" aria-label="Actualizar puntos de OpenStreetMap">
+                      <RefreshCw size={15} className={campingsOsmLoading ? 'is-spinning' : ''} />
+                    </button>
+                  </div>
+                  {campingsOsmError && <p className="camp-map-overlay-error">{campingsOsmError}</p>}
+                </div>
+              </>
+            )}
+
+            {panel === 'info' && (
+              <>
+                <header className="camp-map-panel__header">
+                  <p className="camp-map-kicker">ACJ CAMP · MAPA</p>
+                  <h1>Mapa de campamentos</h1>
+                  <p>Explora sitios registrados por clubes y aprobados para la comunidad.</p>
+                </header>
+                <div className="camp-map-info">
+                  <div><span className="camp-map-info__dot" /><span>Campamento activo</span></div>
+                  <p>Los marcadores muestran lugares disponibles. Selecciona uno para consultar capacidad, servicios y reseñas.</p>
+                  <p>Los marcadores verdes se consultan de OpenStreetMap según el área visible. Los campamentos ACJ aparecen con su ficha y reseñas del registro local.</p>
+                </div>
+              </>
             )}
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </aside>
+
+      <button type="button" className="camp-map-locate" onClick={centrarUbicacion} title="Centrar en mi ubicación" aria-label="Centrar en mi ubicación">
+        <LocateFixed size={20} />
+      </button>
+      <div className="camp-map-scale-note"><span className="camp-map-scale-note__dot" /> Campamentos activos <span>·</span> {capaActual.nombre}</div>
+    </main>
   );
 }
