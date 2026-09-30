@@ -7,6 +7,11 @@ import authService from '../services/authService';
 import Loading from '../components/Loading';
 
 const FORM_VACIO = { nombre: '', tipo: 'conquistadores', logo_url: '' };
+const TIPO_CLUB_ETIQUETA = {
+  aventureros: 'Aventureros',
+  conquistadores: 'Conquistadores',
+  ja: 'Jóvenes Adventistas',
+};
 
 export default function GestionClubs() {
   const { user, updateUser } = useAuth();
@@ -80,6 +85,24 @@ export default function GestionClubs() {
       setMensaje('La iglesia quedó registrada y asociada a tu cuenta. Ya puedes agregar tu club.');
     } catch (err) {
       setError(err.response?.data?.error || 'No se pudo registrar la iglesia.');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const asociarClubAMiIglesia = async (club) => {
+    if (!user?.iglesia_id) {
+      setError('Asocia una iglesia a tu cuenta antes de vincular clubes.');
+      return;
+    }
+    try {
+      setGuardando(true);
+      setError('');
+      await clubService.update(club.id, { iglesia_id: Number(user.iglesia_id) });
+      await cargar();
+      setMensaje(`${club.nombre} quedó asociado a ${user.iglesia_nombre || 'tu iglesia'}.`);
+    } catch (err) {
+      setError(err.response?.data?.error || 'No se pudo asociar el club a tu iglesia.');
     } finally {
       setGuardando(false);
     }
@@ -177,10 +200,16 @@ export default function GestionClubs() {
                     {club.logo_url ? <img src={club.logo_url} alt="" className="h-12 w-12 rounded-lg object-cover" /> : <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50 text-adventista-azul"><Building2 className="h-5 w-5" /></span>}
                     <div>
                       <h3 className="font-medium text-slate-900">{club.nombre}</h3>
-                      <p className="mt-1 text-sm capitalize text-slate-600">{club.tipo}</p>
+                      <p className="mt-1 text-sm text-slate-600">{TIPO_CLUB_ETIQUETA[club.tipo] || club.tipo}</p>
+                      <p className="mt-1 text-xs text-slate-500">Iglesia: {club.iglesia_nombre || 'Sin asignar'}</p>
                     </div>
                   </div>
                   {puedeGestionar && <div className="flex flex-wrap gap-2">
+                    {esDirector && Number(club.iglesia_id) !== Number(user?.iglesia_id) && (
+                      <button type="button" disabled={guardando} onClick={() => asociarClubAMiIglesia(club)} className="inline-flex items-center gap-2 self-start rounded border border-adventista-verde px-3 py-2 text-sm text-adventista-verde hover:bg-emerald-50 disabled:opacity-50">
+                        <Building2 className="h-4 w-4" /> Asociar a mi iglesia
+                      </button>
+                    )}
                     <button type="button" onClick={() => editar(club)} className="inline-flex items-center gap-2 self-start rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
                       <Pencil className="h-4 w-4" /> Editar perfil
                     </button>
@@ -197,6 +226,7 @@ export default function GestionClubs() {
                         <div key={lider.id} className="flex items-center justify-between gap-3 py-2">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-slate-800">{lider.nombre}</p>
+                            <p className="text-xs font-medium text-adventista-verde">Líder de {TIPO_CLUB_ETIQUETA[club.tipo] || club.tipo}</p>
                             <p className="truncate text-xs text-slate-500">{lider.email}</p>
                           </div>
                           <button type="button" onClick={() => quitarLider(club.id, lider.id)} className="inline-flex shrink-0 items-center gap-1 rounded border border-slate-300 px-2 py-1.5 text-xs text-slate-700 hover:border-red-300 hover:text-red-700" aria-label={`Retirar a ${lider.nombre} del club`}>

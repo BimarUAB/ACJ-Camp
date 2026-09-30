@@ -42,13 +42,6 @@ BEGIN
         ALTER TABLE resenas ADD CONSTRAINT resenas_reserva_id_key UNIQUE (reserva_id);
     END IF;
 
-    IF EXISTS (
-        SELECT director_id FROM clubs WHERE director_id IS NOT NULL
-        GROUP BY director_id HAVING COUNT(*) > 1
-    ) THEN
-        RAISE EXCEPTION 'Hay directores asignados a más de un club. Corrija la asignación antes de crear la relación 1:1.';
-    END IF;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_clubs_director_unico ON clubs (director_id) WHERE director_id IS NOT NULL;
 END $$;
 
 COMMIT;

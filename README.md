@@ -89,6 +89,12 @@ psql -U postgres -d campusab -f database/migrate-club-lideres.sql
 
 En una base nueva, `schema.sql` ya incluye esta relación.
 
+Para permitir que un Director gestione varios clubes en una base existente, ejecuta la migración aditiva que quita la restricción 1:1 sin borrar clubes:
+
+```bash
+psql -U postgres -d campusab -f database/migrate-director-multiple-clubs.sql
+```
+
 Para cargar ocho lugares marcados explícitamente como demostración, ejecuta el seed idempotente desde la raíz después de que PostgreSQL acepte conexiones:
 
 ```bash

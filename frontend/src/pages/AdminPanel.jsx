@@ -24,6 +24,19 @@ const TABS = [
 
 const SERVICIOS_OPCIONES = ['agua', 'baños', 'electricidad', 'fogata', 'senderos', 'rio', 'carpa', 'cocina', 'estacionamiento'];
 
+const fechaLocalActual = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const periodoReserva = (reserva, hoy) => {
+  const inicio = String(reserva.fecha_inicio).slice(0, 10);
+  const fin = String(reserva.fecha_fin).slice(0, 10);
+  if (fin < hoy) return 'pasadas';
+  if (inicio > hoy) return 'futuras';
+  return 'encurso';
+};
+
 export default function AdminPanel() {
   const { user: currentUser } = useAuth();
   const [tab, setTab] = useState('stats');
@@ -40,6 +53,11 @@ export default function AdminPanel() {
   const [iglesias, setIglesias] = useState([]);
   const [directorioIglesias, setDirectorioIglesias] = useState([]);
   const [busquedaUsuario, setBusquedaUsuario] = useState('');
+  const [busquedaReserva, setBusquedaReserva] = useState('');
+  const [filtroEstadoReserva, setFiltroEstadoReserva] = useState('todos');
+  const [filtroIglesiaReserva, setFiltroIglesiaReserva] = useState('todas');
+  const [filtroClubReserva, setFiltroClubReserva] = useState('todos');
+  const [filtroPeriodoReserva, setFiltroPeriodoReserva] = useState('todos');
   const [usuarioEditando, setUsuarioEditando] = useState(null);
   const [formUsuario, setFormUsuario] = useState({ nombre: '', email: '', telefono: '', iglesia_id: '' });
 
@@ -280,6 +298,20 @@ export default function AdminPanel() {
       setError(err.response?.data?.error || 'No se pudo eliminar el club.');
     }
   };
+
+  const hoy = fechaLocalActual();
+  const directorioClubes = directorioIglesias.flatMap((iglesia) =>
+    iglesia.clubs.map((club) => ({ ...club, iglesia_nombre: iglesia.nombre, iglesia_id: iglesia.id }))
+  );
+  const reservasFiltradas = reservas.filter((reserva) => {
+    const texto = `${reserva.lugar_nombre || ''} ${reserva.usuario_nombre || ''} ${reserva.usuario_email || ''} ${reserva.club_nombre || ''} ${reserva.iglesia_nombre || ''} ${reserva.proposito || ''}`.toLocaleLowerCase('es');
+    return (filtroEstadoReserva === 'todos' || reserva.estado === filtroEstadoReserva)
+      && (filtroIglesiaReserva === 'todas' || String(reserva.iglesia_id) === filtroIglesiaReserva)
+      && (filtroClubReserva === 'todos' || String(reserva.club_id) === filtroClubReserva)
+      && (filtroPeriodoReserva === 'todos' || periodoReserva(reserva, hoy) === filtroPeriodoReserva)
+      && texto.includes(busquedaReserva.trim().toLocaleLowerCase('es'));
+  });
+  const contarEstadoReserva = (estado) => reservas.filter((reserva) => reserva.estado === estado).length;
 
   if (loading) return <Loading message="Cargando panel..." />;
 
@@ -525,15 +557,46 @@ export default function AdminPanel() {
 
       {tab === 'reservas' && (
         <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <h2 className="mb-4 font-semibold text-slate-800">Todas las reservas</h2>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-slate-800">Todas las reservas</h2>
+              <p className="mt-1 text-xs text-slate-500">{reservasFiltradas.length} de {reservas.length} · {contarEstadoReserva('pendiente')} pendientes · {contarEstadoReserva('confirmada')} confirmadas · {contarEstadoReserva('completada')} completadas · {contarEstadoReserva('cancelada')} canceladas</p>
+            </div>
+            <button type="button" onClick={() => { setBusquedaReserva(''); setFiltroEstadoReserva('todos'); setFiltroIglesiaReserva('todas'); setFiltroClubReserva('todos'); setFiltroPeriodoReserva('todos'); }} className="text-sm font-semibold text-adventista-azul hover:underline">Limpiar filtros</button>
+          </div>
+          <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <input value={busquedaReserva} onChange={(event) => setBusquedaReserva(event.target.value)} placeholder="Buscar líder, lugar o motivo" aria-label="Buscar reserva" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <select value={filtroIglesiaReserva} onChange={(event) => { setFiltroIglesiaReserva(event.target.value); setFiltroClubReserva('todos'); }} aria-label="Filtrar por iglesia" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+              <option value="todas">Todas las iglesias</option>
+              {directorioIglesias.map((iglesia) => <option key={iglesia.id} value={iglesia.id}>{iglesia.nombre}</option>)}
+            </select>
+            <select value={filtroClubReserva} onChange={(event) => setFiltroClubReserva(event.target.value)} aria-label="Filtrar por club" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+              <option value="todos">Todos los clubes</option>
+              {directorioClubes.filter((club) => filtroIglesiaReserva === 'todas' || String(club.iglesia_id) === filtroIglesiaReserva).map((club) => <option key={club.id} value={club.id}>{club.nombre}</option>)}
+            </select>
+            <select value={filtroEstadoReserva} onChange={(event) => setFiltroEstadoReserva(event.target.value)} aria-label="Filtrar por estado" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+              <option value="todos">Todos los estados</option>
+              <option value="pendiente">Pendientes</option>
+              <option value="confirmada">Confirmadas</option>
+              <option value="completada">Completadas</option>
+              <option value="cancelada">Canceladas</option>
+            </select>
+            <select value={filtroPeriodoReserva} onChange={(event) => setFiltroPeriodoReserva(event.target.value)} aria-label="Filtrar por periodo" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+              <option value="todos">Todas las fechas</option>
+              <option value="futuras">Próximas</option>
+              <option value="encurso">En curso</option>
+              <option value="pasadas">Pasadas</option>
+            </select>
+          </div>
           <div className="space-y-3">
-            {reservas.map((r) => (
+            {reservasFiltradas.map((r) => (
               <div key={r.id} className="rounded-xl border border-slate-200 p-4">
                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="font-semibold text-slate-900">{r.lugar_nombre || `Lugar #${r.lugar_id}`}</p>
                     <p className="mt-1 flex items-center gap-1 text-sm text-slate-600"><CalendarDays className="h-4 w-4" /> {r.fecha_inicio} → {r.fecha_fin}</p>
                     <p className="mt-1 text-sm text-slate-600">Solicitante: {r.usuario_nombre || r.usuario_id}{r.usuario_email ? ` · ${r.usuario_email}` : ''}</p>
+                    <p className="text-sm text-slate-600">Iglesia: {r.iglesia_nombre || 'Sin iglesia registrada'}</p>
                     <p className="text-sm text-slate-600">Club: {r.club_nombre || 'Sin club asociado'}</p>
                     <p className="mt-1 text-sm text-slate-700">Motivo: {r.proposito || 'No indicado'}</p>
                     {r.estado === 'pendiente' && r.expires_at && <p className="mt-1 text-xs font-medium text-amber-800">Esperando confirmación del líder hasta {new Date(r.expires_at).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</p>}
@@ -549,7 +612,7 @@ export default function AdminPanel() {
                 </div>
               </div>
             ))}
-            {reservas.length === 0 && <p className="py-8 text-center text-sm text-slate-500">Todavía no hay solicitudes de reserva.</p>}
+            {reservasFiltradas.length === 0 && <p className="py-8 text-center text-sm text-slate-500">No hay reservas que coincidan con los filtros.</p>}
           </div>
         </div>
       )}

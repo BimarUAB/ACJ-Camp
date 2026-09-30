@@ -28,9 +28,9 @@ exports.getAllClubs = async (req, res) => {
     let params = [];
     let paramCount = 0;
 
-    if (iglesia_id) {
-      conditions.push(`c.iglesia_id = $${++paramCount}`);
-      params.push(iglesia_id);
+      if (iglesia_id && req.user.rol !== 'director') {
+        conditions.push(`c.iglesia_id = $${++paramCount}`);
+        params.push(iglesia_id);
     }
 
     if (req.user.rol === 'director') {
@@ -261,9 +261,6 @@ exports.createClub = async (req, res) => {
     res.status(201).json({ success: true, message: 'Club creado exitosamente', club: result.rows[0] });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
-    if (error.code === '23505') {
-      return res.status(409).json({ success: false, error: 'Este director ya tiene un club asignado' });
-    }
     console.error('Error creando club:', error);
     res.status(500).json({ success: false, error: 'Error al crear club' });
   } finally {
@@ -277,7 +274,12 @@ exports.updateClub = async (req, res) => {
 
     const access = await getManagedClub(id, req);
     if (access.error) return res.status(access.error.status).json({ success: false, error: access.error.message });
-    const existing = access.club;
+    const directorChurch = isAdmin(req)
+      ? null
+      : await pool.query('SELECT iglesia_id FROM usuarios WHERE id = $1', [req.user.id]);
+    if (!isAdmin(req) && !directorChurch.rows[0]?.iglesia_id) {
+      return res.status(400).json({ success: false, error: 'Asocia una iglesia a tu cuenta antes de gestionar clubes' });
+    }
 
     const { nombre, tipo, iglesia_id, director_id, logo_url } = req.body;
 
@@ -295,17 +297,17 @@ exports.updateClub = async (req, res) => {
       }
     }
 
-    const result = await pool.query(
-      `UPDATE clubs
-       SET nombre = COALESCE($1, nombre),
+      const result = await pool.query(
+        `UPDATE clubs
+         SET nombre = COALESCE($1, nombre),
            tipo = COALESCE($2, tipo),
            iglesia_id = COALESCE($3, iglesia_id),
            director_id = COALESCE($4, director_id),
            logo_url = COALESCE($5, logo_url)
-       WHERE id = $6
-       RETURNING *`,
-      [nombre, tipo, isAdmin(req) ? iglesia_id : existing.iglesia_id,
-        isAdmin(req) ? director_id : existing.director_id, logo_url, id]
+         WHERE id = $6
+         RETURNING *`,
+        [nombre, tipo, isAdmin(req) ? iglesia_id : directorChurch.rows[0].iglesia_id,
+          isAdmin(req) ? director_id : req.user.id, logo_url, id]
     );
 
     res.json({ success: true, message: 'Club actualizado exitosamente', club: result.rows[0] });

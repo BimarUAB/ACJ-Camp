@@ -98,7 +98,8 @@ export default function MisReservas() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="text-2xl font-semibold text-slate-900">Mis reservas</h1>
+      <h1 className="text-2xl font-semibold text-slate-900">{user?.rol === 'director' ? 'Reservas de mis clubes' : 'Mis reservas'}</h1>
+      {user?.rol === 'director' && <p className="mt-1 text-sm text-slate-600">Solicitudes realizadas por ti y por los líderes de tus clubes.</p>}
       {error && <div className="mt-4"><ErrorMessage message={error} onRetry={cargar} /></div>}
 
       <div className="mt-6 space-y-4">
@@ -140,7 +141,7 @@ export default function MisReservas() {
                   <span className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold capitalize ${estadoClase[reserva.estado] || 'bg-slate-100 text-slate-700'}`}>
                     <Icon className="h-3.5 w-3.5" /> {reserva.estado}
                   </span>
-                  {reserva.estado !== 'cancelada' && reserva.estado !== 'completada' && (
+                  {Number(reserva.usuario_id) === Number(user?.id) && reserva.estado !== 'cancelada' && reserva.estado !== 'completada' && (
                     <button
                       onClick={() => cancelar(reserva.id)}
                       className="flex items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"

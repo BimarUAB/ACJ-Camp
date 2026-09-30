@@ -27,13 +27,16 @@ exports.getAllReservas = async (req, res) => {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const result = await pool.query(`
-                  SELECT r.*, l.nombre AS lugar_nombre, l.telefono AS lugar_telefono, l.contacto AS lugar_contacto,
-                    l.propietario AS lugar_propietario, c.nombre AS club_nombre, c.tipo AS club_tipo,
-              u.nombre AS usuario_nombre, u.email AS usuario_email, u.telefono AS usuario_telefono
+              SELECT r.*, l.nombre AS lugar_nombre, l.telefono AS lugar_telefono, l.contacto AS lugar_contacto,
+                 l.propietario AS lugar_propietario, c.nombre AS club_nombre, c.tipo AS club_tipo,
+                 c.iglesia_id AS iglesia_id, COALESCE(club_church.nombre, user_church.nombre) AS iglesia_nombre,
+                 u.nombre AS usuario_nombre, u.email AS usuario_email, u.telefono AS usuario_telefono
       FROM reservas r
       LEFT JOIN lugares_camping l ON r.lugar_id = l.id
       LEFT JOIN clubs c ON r.club_id = c.id
       LEFT JOIN usuarios u ON r.usuario_id = u.id
+              LEFT JOIN iglesias club_church ON club_church.id = c.iglesia_id
+              LEFT JOIN iglesias user_church ON user_church.id = u.iglesia_id
       ${whereClause}
       ORDER BY r.fecha_inicio DESC
     `, params);
@@ -57,8 +60,25 @@ exports.getMyReservas = async (req, res) => {
       LEFT JOIN clubs c ON r.club_id = c.id
             LEFT JOIN usuarios u ON r.usuario_id = u.id
       WHERE r.usuario_id = $1
+         OR (
+           $2::text = 'director'
+           AND EXISTS (
+             SELECT 1
+             FROM clubs managed_club
+             WHERE managed_club.id = r.club_id
+               AND (
+                 managed_club.director_id = $1
+                 OR (
+                   managed_club.director_id IS NULL
+                   AND managed_club.iglesia_id = (
+                     SELECT iglesia_id FROM usuarios WHERE id = $1
+                   )
+                 )
+               )
+           )
+         )
       ORDER BY r.fecha_inicio DESC
-    `, [req.user.id]);
+    `, [req.user.id, req.user.rol]);
 
     res.json({ success: true, count: result.rows.length, reservas: result.rows });
   } catch (error) {

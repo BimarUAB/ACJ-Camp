@@ -41,7 +41,7 @@ CREATE TABLE clubs (
     nombre VARCHAR(150) NOT NULL,
     tipo VARCHAR(30) CHECK (tipo IN ('conquistadores', 'aventureros', 'ja')),
     iglesia_id INTEGER REFERENCES iglesias(id),
-    director_id INTEGER UNIQUE REFERENCES usuarios(id),
+    director_id INTEGER REFERENCES usuarios(id),
     logo_url VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
