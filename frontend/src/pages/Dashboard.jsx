@@ -1,12 +1,32 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Compass, CalendarRange, MapPinned, Star, Users, MapPin, ShieldCheck } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, CalendarRange, Compass, MapPin, MapPinned, Star } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import lugarService from '../services/lugarService';
 import reservaService from '../services/reservaService';
 import reportService from '../services/reportService';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
+
+const FALLBACK_HERO_IMAGE = 'https://images.unsplash.com/photo-1504851149312-7a075b496cc7?auto=format&fit=crop&w=1800&q=85';
+const FALLBACK_PLACE_IMAGES = [
+  'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
+];
+
+const obtenerFoto = (lugar) => {
+  if (Array.isArray(lugar.fotos)) return lugar.fotos[0] || '';
+  if (typeof lugar.fotos === 'string') {
+    try {
+      const fotos = JSON.parse(lugar.fotos);
+      return Array.isArray(fotos) ? fotos[0] || '' : fotos;
+    } catch {
+      return lugar.fotos;
+    }
+  }
+  return '';
+};
 
 export default function Dashboard() {
   const { user, isAdmin, isAuthenticated } = useAuth();
@@ -15,6 +35,8 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const nombreUsuario = user?.nombre?.replace(/\s*CampUSAB\b/gi, '').trim();
+  const fotoPortada = lugares.map(obtenerFoto).find(Boolean) || FALLBACK_HERO_IMAGE;
 
   const cargarDatos = async () => {
     try {
@@ -42,119 +64,110 @@ export default function Dashboard() {
     cargarDatos();
   }, [isAuthenticated]);
 
+  const accesos = [
+    { to: '/buscar', title: 'Explorar campamentos', description: 'Encuentra lugares por zona, servicios y distancia.', icon: Compass },
+    ...(isAuthenticated ? [{ to: '/mis-lugares', title: 'Mis lugares', description: 'Propón un nuevo destino o actualiza los tuyos.', icon: MapPin }] : []),
+    { to: '/reservas', title: 'Mis reservas', description: 'Revisa tus solicitudes y próximas fechas.', icon: CalendarRange },
+    { to: '/buscar', title: 'Mapa interactivo', description: 'Descubre sitios registrados y puntos cercanos.', icon: MapPinned },
+  ];
+
   if (loading) return <Loading message="Cargando dashboard..." />;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10">
-      <div className="rounded-3xl bg-gradient-to-r from-adventista-azul to-slate-800 p-8 text-white shadow-xl">
-        <p className="mb-2 text-sm uppercase tracking-[0.3em] text-slate-200">ACJ-Camp</p>
-        <h1 className="text-3xl font-bold">{user ? `Hola, ${user.nombre}` : 'Encuentra tu próximo campamento'}</h1>
-        <p className="mt-3 max-w-2xl text-slate-200">
-          Encuentra lugares de campamento, gestiona tus reservas y comparte reseñas con otros clubes adventistas.
-        </p>
-      </div>
+    <main className="dashboard-page">
+      <div className="dashboard-container">
+        <section className="dashboard-hero">
+          <div className="dashboard-hero__copy">
+            <p className="dashboard-eyebrow">ACJ-Camp · AVENTUREROS, CONQUISTADORES, JÓVENES</p>
+            <h1>{user ? `Hola, ${nombreUsuario || 'aventurero'}` : 'Tu próxima aventura empieza aquí'}</h1>
+            <p>Encuentra campamentos en Bolivia, explora el mapa y organiza tu próxima salida con tu club.</p>
+            <div className="dashboard-hero__actions">
+              <Link to="/buscar" className="dashboard-button-primary">Explorar campamentos <ArrowRight size={16} /></Link>
+              <Link to="/buscar" className="dashboard-button-secondary">Ver mapa</Link>
+            </div>
+          </div>
+          <div className="dashboard-hero__visual">
+            <img src={fotoPortada} alt="Paisaje de un campamento en la naturaleza" />
+            <div className="dashboard-hero__caption"><MapPin size={15} /><span>Destinos para descubrir en toda Bolivia</span></div>
+          </div>
+        </section>
 
-      {error && <div className="mt-6"><ErrorMessage message={error} onRetry={cargarDatos} /></div>}
+        {error && <div className="mt-6"><ErrorMessage message={error} onRetry={cargarDatos} /></div>}
 
-      {isAdmin() && stats && (
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Lugares</p>
-            <p className="text-2xl font-bold text-adventista-azul">{stats.total_lugares}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Reservas</p>
-            <p className="text-2xl font-bold text-adventista-azul">{stats.total_reservas}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Usuarios</p>
-            <p className="text-2xl font-bold text-adventista-azul">{stats.total_usuarios}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Pendientes</p>
-            <p className="text-2xl font-bold text-adventista-rojo">{stats.lugares_pendientes}</p>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <Link to="/buscar" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-          <div className="mb-4 inline-flex rounded-full bg-adventista-dorado/20 p-3 text-adventista-azul">
-            <Compass className="h-6 w-6" />
-          </div>
-          <h2 className="text-xl font-semibold text-slate-900">Explorar lugares</h2>
-          <p className="mt-2 text-sm text-slate-600">Busca campings cercanos con filtros por servicios y distancia.</p>
-        </Link>
-        {isAuthenticated && (
-          <Link to="/mis-lugares" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-            <div className="mb-4 inline-flex rounded-full bg-adventista-dorado/20 p-3 text-adventista-azul"><MapPin className="h-6 w-6" /></div>
-            <h2 className="text-xl font-semibold text-slate-900">Mis lugares</h2>
-            <p className="mt-2 text-sm text-slate-600">Agrega o edita lugares de campamento.</p>
-          </Link>
+        {isAdmin() && stats && (
+          <section className="dashboard-stats" aria-label="Resumen administrativo">
+            <div className="dashboard-stat"><span>Lugares registrados</span><strong>{stats.total_lugares}</strong></div>
+            <div className="dashboard-stat"><span>Reservas</span><strong>{stats.total_reservas}</strong></div>
+            <div className="dashboard-stat"><span>Usuarios</span><strong>{stats.total_usuarios}</strong></div>
+            <div className="dashboard-stat dashboard-stat--pending"><span>Lugares pendientes</span><strong>{stats.lugares_pendientes}</strong></div>
+          </section>
         )}
-        <Link to="/reservas" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-          <div className="mb-4 inline-flex rounded-full bg-adventista-dorado/20 p-3 text-adventista-azul">
-            <CalendarRange className="h-6 w-6" />
-          </div>
-          <h2 className="text-xl font-semibold text-slate-900">Mis reservas</h2>
-          <p className="mt-2 text-sm text-slate-600">Gestiona tus solicitudes y revisa fechas confirmadas.</p>
-        </Link>
-        <Link to="/buscar" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-          <div className="mb-4 inline-flex rounded-full bg-adventista-dorado/20 p-3 text-adventista-azul">
-            <MapPinned className="h-6 w-6" />
-          </div>
-          <h2 className="text-xl font-semibold text-slate-900">Mapa interactivo</h2>
-          <p className="mt-2 text-sm text-slate-600">Visualiza ubicaciones y distancias desde tu iglesia.</p>
-        </Link>
-      </div>
 
-      <div className="mt-10 grid gap-8 lg:grid-cols-2">
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-slate-900">Lugares destacados</h2>
-            <Link to="/buscar" className="text-sm font-medium text-adventista-azul hover:underline">Ver todos</Link>
+        <section className="dashboard-section">
+          <div className="dashboard-section-heading">
+            <div><p>Planifica tu salida</p><h2>¿Qué quieres hacer?</h2></div>
           </div>
-          <div className="space-y-4">
-            {lugares.slice(0, 3).map((lugar) => (
-              <Link key={lugar.id} to={`/lugar/${lugar.id}`} className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-semibold text-slate-900">{lugar.nombre}</h3>
-                    <p className="mt-1 text-sm text-slate-500">{lugar.direccion}</p>
-                    <p className="mt-1 text-sm text-slate-600">Capacidad: {lugar.capacidad_maxima} personas</p>
-                  </div>
-                  {lugar.promedio_calificacion > 0 && (
-                    <div className="flex items-center gap-1 text-sm font-medium text-adventista-dorado">
-                      <Star className="h-4 w-4 fill-adventista-dorado" />
-                      {Number(lugar.promedio_calificacion).toFixed(1)}
-                    </div>
-                  )}
-                </div>
+          <div className="dashboard-shortcut-grid">
+            {accesos.map(({ to, title, description, icon: Icon }) => (
+              <Link key={title} to={to} className="dashboard-shortcut">
+                <span className="dashboard-shortcut__icon"><Icon size={18} /></span>
+                <h3>{title}</h3>
+                <p>{description}</p>
               </Link>
             ))}
-            {lugares.length === 0 && <p className="text-slate-500">No hay lugares activos aún.</p>}
           </div>
-        </div>
+        </section>
 
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-slate-900">Mis próximas reservas</h2>
-            <Link to="/reservas" className="text-sm font-medium text-adventista-azul hover:underline">Ver todas</Link>
-          </div>
-          <div className="space-y-4">
-            {reservas.slice(0, 3).map((reserva) => (
-              <div key={reserva.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="font-semibold text-slate-900">{reserva.lugar_nombre || `Lugar #${reserva.lugar_id}`}</p>
-                <p className="mt-1 text-sm text-slate-600">{reserva.fecha_inicio} → {reserva.fecha_fin}</p>
-                <span className="mt-2 inline-block rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold capitalize text-slate-700">
-                  {reserva.estado}
-                </span>
+        <div className="dashboard-section dashboard-content-grid">
+          <section>
+            <div className="dashboard-section-heading">
+              <div><p>Ideas para tu próxima salida</p><h2>Lugares destacados</h2></div>
+              <Link to="/buscar" className="dashboard-section-link">Ver todos <ArrowUpRight size={15} /></Link>
+            </div>
+            {lugares.length > 0 ? (
+              <div className="dashboard-place-grid">
+                {lugares.slice(0, 3).map((lugar, index) => (
+                  <Link key={lugar.id} to={`/lugar/${lugar.id}`} className="dashboard-place-card">
+                    <div className="dashboard-place-card__image">
+                      <img src={obtenerFoto(lugar) || FALLBACK_PLACE_IMAGES[index % FALLBACK_PLACE_IMAGES.length]} alt={`Paisaje de ${lugar.nombre}`} loading="lazy" />
+                      <span>{lugar.capacidad_maxima ? `${lugar.capacidad_maxima} personas` : 'Campamento'}</span>
+                    </div>
+                    <div className="dashboard-place-card__body">
+                      <h3>{lugar.nombre}</h3>
+                      <p>{lugar.direccion || 'Bolivia'}</p>
+                      <div className="dashboard-place-card__meta">
+                        <span>{lugar.distancia_km != null ? `${lugar.distancia_km} km` : 'Destino ACJ'}</span>
+                        {Number(lugar.promedio_calificacion) > 0 && <span><Star size={13} fill="currentColor" /> {Number(lugar.promedio_calificacion).toFixed(1)}</span>}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
               </div>
-            ))}
-            {reservas.length === 0 && <p className="text-slate-500">Aún no tienes reservas.</p>}
-          </div>
+            ) : <p className="dashboard-empty">No hay lugares activos para mostrar todavía.</p>}
+          </section>
+
+          <section>
+            <div className="dashboard-section-heading">
+              <div><p>Tu agenda</p><h2>Próximas reservas</h2></div>
+              <Link to="/reservas" className="dashboard-section-link">Ver todas <ArrowUpRight size={15} /></Link>
+            </div>
+            {reservas.length > 0 ? (
+              <div className="dashboard-reservations">
+                {reservas.slice(0, 3).map((reserva) => (
+                  <div key={reserva.id} className="dashboard-reservation">
+                    <span className="dashboard-reservation__icon"><CalendarRange size={16} /></span>
+                    <div className="dashboard-reservation__body">
+                      <strong>{reserva.lugar_nombre || `Lugar #${reserva.lugar_id}`}</strong>
+                      <p>{reserva.fecha_inicio} · {reserva.fecha_fin} · {reserva.estado}</p>
+                      <p>{reserva.club_nombre || 'Sin club'} · {reserva.proposito || 'Sin motivo'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="dashboard-empty">Aún no tienes reservas. Cuando planifiques una salida, aparecerá aquí.</p>}
+          </section>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

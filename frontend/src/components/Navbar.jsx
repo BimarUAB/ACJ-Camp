@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { MapPin, CalendarDays, LogOut, LogIn, ShieldCheck } from 'lucide-react';
+import { MapPin, CalendarDays, LogOut, LogIn, ShieldCheck, UserRound } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
@@ -12,10 +12,10 @@ export default function Navbar() {
   };
 
   return (
-    <header className="bg-adventista-azul text-white shadow-md">
+    <header className="camp-site-header border-b border-white/10 text-white shadow-md">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <Link to="/" className="flex items-center gap-2 text-lg font-semibold">
-          <MapPin className="h-5 w-5" />
+          <img src="/logo-acj-camp.png" alt="" className="h-10 w-10 rounded-full bg-white object-contain" />
           ACJ-Camp
         </Link>
         <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm sm:justify-end">
@@ -25,10 +25,11 @@ export default function Navbar() {
           <Link to="/reservas" className="flex items-center gap-1 hover:text-adventista-dorado">
             <CalendarDays className="h-4 w-4" /> Reservas
           </Link>
+          {user && <Link to="/mi-perfil" className="flex items-center gap-1 hover:text-adventista-dorado"><UserRound className="h-4 w-4" /> Mi perfil</Link>}
           {user && <Link to="/mis-lugares" className="flex items-center gap-1 hover:text-adventista-dorado">Mis lugares</Link>}
           {user?.rol === 'director' && (
             <>
-              <Link to="/mis-clubes" className="flex items-center gap-1 hover:text-adventista-dorado">Mis clubes</Link>
+              <Link to="/mis-clubes" className="flex items-center gap-1 hover:text-adventista-dorado">Iglesias y clubes</Link>
             </>
           )}
           {user?.rol === 'admin' && (

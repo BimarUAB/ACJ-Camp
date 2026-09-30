@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Swal from 'sweetalert2';
-import { CalendarDays, MapPin, Trash2, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { CalendarDays, CheckCircle, Clock, MapPin, Phone, Trash2, XCircle } from 'lucide-react';
 import reservaService from '../services/reservaService';
 import { useAuth } from '../context/AuthContext';
 import Loading from '../components/Loading';
@@ -25,6 +25,7 @@ export default function MisReservas() {
   const [reservas, setReservas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [ahora, setAhora] = useState(Date.now());
 
   const cargar = async () => {
     try {
@@ -41,7 +42,38 @@ export default function MisReservas() {
 
   useEffect(() => {
     cargar();
+    const interval = window.setInterval(async () => {
+      setAhora(Date.now());
+      try {
+        const { data } = await reservaService.getMisReservas();
+        setReservas(data?.reservas || data || []);
+      } catch {
+        // Keep the current list visible if the periodic refresh fails.
+      }
+    }, 60 * 1000);
+    return () => window.clearInterval(interval);
   }, []);
+
+  const confirmarConLugar = async (reserva) => {
+    const confirmacion = await Swal.fire({
+      title: '¿El lugar confirmó tu reserva?',
+      text: 'Al confirmar, estas fechas quedarán ocupadas para los demás usuarios.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, confirmar reserva',
+      cancelButtonText: 'Todavía no'
+    });
+    if (!confirmacion.isConfirmed) return;
+
+    try {
+      await reservaService.confirmarConLugar(reserva.id);
+      await Swal.fire({ title: 'Reserva confirmada', text: 'Las fechas ya aparecen ocupadas.', icon: 'success', confirmButtonText: 'Entendido' });
+      await cargar();
+    } catch (err) {
+      setError(err.response?.data?.error || 'No se pudo confirmar la reserva.');
+      await cargar();
+    }
+  };
 
   const cancelar = async (id) => {
     const confirmation = await Swal.fire({
@@ -84,8 +116,24 @@ export default function MisReservas() {
                     <CalendarDays className="h-4 w-4" />
                     {reserva.fecha_inicio} → {reserva.fecha_fin}
                   </p>
+                  <p className="mt-1 text-sm text-slate-600">Solicitante: {reserva.usuario_nombre || user?.nombre}</p>
+                  <p className="mt-1 text-sm text-slate-600">Club: {reserva.club_nombre || 'Sin club asociado'}</p>
+                  <p className="mt-1 text-sm text-slate-600">Referencia del lugar: #{reserva.lugar_id}</p>
+                  {reserva.lugar_telefono && (
+                    <a href={`tel:${reserva.lugar_telefono}`} className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-adventista-azul hover:underline">
+                      <Phone className="h-4 w-4" /> Contactar lugar: {reserva.lugar_telefono}
+                    </a>
+                  )}
+                  {reserva.lugar_contacto && <p className="mt-1 text-sm text-slate-600">Contacto: {reserva.lugar_contacto}</p>}
                   {reserva.proposito && (
-                    <p className="mt-1 text-sm text-slate-500">Propósito: {reserva.proposito}</p>
+                    <p className="mt-1 text-sm text-slate-500">Motivo: {reserva.proposito}</p>
+                  )}
+                  {reserva.estado === 'pendiente' && reserva.expires_at && (
+                    <p className="mt-2 text-sm font-medium text-amber-800">
+                      {Date.parse(reserva.expires_at) <= ahora
+                        ? 'Plazo vencido; las fechas se liberarán automáticamente.'
+                        : `Contacta el lugar y confirma antes del ${new Date(reserva.expires_at).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}.`}
+                    </p>
                   )}
                 </div>
                 <div className="flex items-center gap-3">
@@ -98,6 +146,16 @@ export default function MisReservas() {
                       className="flex items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
                     >
                       <Trash2 className="h-4 w-4" /> Cancelar
+                    </button>
+                  )}
+                  {reserva.estado === 'pendiente' && (
+                    <button
+                      type="button"
+                      onClick={() => confirmarConLugar(reserva)}
+                      disabled={!reserva.expires_at || Date.parse(reserva.expires_at) <= ahora}
+                      className="flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <CheckCircle className="h-4 w-4" /> Ya confirmé con el lugar
                     </button>
                   )}
                 </div>

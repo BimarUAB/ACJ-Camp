@@ -46,6 +46,15 @@ CREATE TABLE clubs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE club_lideres (
+    club_id INTEGER NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+    lider_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (club_id, lider_id)
+);
+
+CREATE INDEX idx_club_lideres_lider_id ON club_lideres (lider_id);
+
 -- Tabla: LUGAR_CAMPING
 CREATE TABLE lugares_camping (
     id SERIAL PRIMARY KEY,
@@ -78,11 +87,12 @@ CREATE TABLE reservas (
     estado VARCHAR(20) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'confirmada', 'cancelada', 'completada')),
     notas TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ,
     CONSTRAINT fechas_validas CHECK (fecha_fin >= fecha_inicio),
     CONSTRAINT reservas_sin_solapamiento EXCLUDE USING GIST (
         lugar_id WITH =,
         daterange(fecha_inicio, fecha_fin, '[]') WITH &&
-    ) WHERE (estado <> 'cancelada')
+    ) WHERE (estado IN ('confirmada', 'completada'))
 );
 
 -- Tabla: RESENA (sin caracteres especiales para evitar problemas de codificación)

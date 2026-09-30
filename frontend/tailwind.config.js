@@ -8,11 +8,15 @@ export default {
     extend: {
       colors: {
         adventista: {
-          azul: '#2E5AAC',
-          dorado: '#D4A017',
-          rojo: '#C41E3A',
-          verde: '#228B22',
+          azul: '#244936',
+          dorado: '#C9A45E',
+          rojo: '#B75D4A',
+          verde: '#6F8759',
         }
+      },
+      fontFamily: {
+        sans: ['DM Sans', 'sans-serif'],
+        display: ['DM Serif Display', 'Georgia', 'serif'],
       }
     },
   },

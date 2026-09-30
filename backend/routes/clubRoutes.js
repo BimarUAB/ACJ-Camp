@@ -13,11 +13,29 @@ const validate = (req, res, next) => {
 };
 
 router.get('/', auth.verifyToken, clubController.getAllClubs);
+router.get('/directorio', auth.verifyToken, auth.requireAdmin, clubController.getChurchClubDirectory);
+router.get('/:id/lideres', auth.verifyToken, param('id').isInt(), validate, clubController.getClubLeaders);
+router.post('/:id/lideres',
+  auth.verifyToken,
+  auth.requireDirectorOrAdmin,
+  param('id').isInt(),
+  body('lider_id').isInt(),
+  validate,
+  clubController.addClubLeader
+);
+router.delete('/:id/lideres/:liderId',
+  auth.verifyToken,
+  auth.requireDirectorOrAdmin,
+  param('id').isInt(),
+  param('liderId').isInt(),
+  validate,
+  clubController.removeClubLeader
+);
 router.get('/:id', auth.verifyToken, param('id').isInt(), validate, clubController.getClubById);
 
 router.post('/',
   auth.verifyToken,
-  auth.requireDirectorOrAdmin,
+  auth.requireRole('director'),
   body('nombre').notEmpty().trim(),
   body('tipo').isIn(['conquistadores', 'aventureros', 'ja']),
   body('iglesia_id').isInt(),

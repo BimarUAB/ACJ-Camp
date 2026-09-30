@@ -10,12 +10,14 @@ if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process
 const pool = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
 const clubRoutes = require('./routes/clubRoutes');
+const iglesiaRoutes = require('./routes/iglesiaRoutes');
 const lugarRoutes = require('./routes/lugarRoutes');
 const reservaRoutes = require('./routes/reservaRoutes');
 const reseñaRoutes = require('./routes/reseñaRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const mapaRoutes = require('./routes/mapaRoutes');
+const { expirePendingReservations } = require('./utils/reservationExpiry');
 
 const app = express();
 app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
@@ -47,6 +49,7 @@ app.use((req, res, next) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/clubs', clubRoutes);
+app.use('/api/iglesias', iglesiaRoutes);
 app.use('/api/lugares', lugarRoutes);
 app.use('/api/reservas', reservaRoutes);
 app.use('/api/resenas', reseñaRoutes);
@@ -56,7 +59,7 @@ app.use('/api/mapa', mapaRoutes);
 
 app.get('/', (req, res) => {
   res.json({
-    message: 'CampUSAB API - Sistema de Gestión de Campamentos para Clubes Juveniles Adventistas',
+    message: 'ACJ-Camp API - Sistema de Gestión de Campamentos para Clubes Juveniles Adventistas',
     version: '1.0.0',
     status: 'running'
   });
@@ -115,7 +118,20 @@ const testDatabaseConnection = async () => {
 
 testDatabaseConnection();
 
+const revisarReservasVencidas = async () => {
+  try {
+    const expiradas = await expirePendingReservations();
+    if (expiradas.length) console.log(`⏱️ ${expiradas.length} reserva(s) pendiente(s) vencida(s)`);
+  } catch (error) {
+    console.warn('⚠️ No se pudieron revisar las reservas vencidas:', error.message);
+  }
+};
+
+revisarReservasVencidas();
+const temporizadorReservas = setInterval(revisarReservasVencidas, 60 * 1000);
+temporizadorReservas.unref();
+
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor CampUSAB corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor ACJ-Camp corriendo en http://localhost:${PORT}`);
   console.log(`📅 ${new Date().toLocaleString()}`);
 });

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, CircleMarker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import {
   Info,
+  Church,
   Layers,
   LocateFixed,
   Map as MapIcon,
@@ -22,14 +24,25 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import lugarService from '../services/lugarService';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
+import ServicioIcono from '../components/ServicioIcono';
 import { useAuth } from '../context/AuthContext';
+import { useUserLocation } from '../context/LocationContext';
 import mapaService from '../services/mapaService';
+import authService from '../services/authService';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
   iconUrl: markerIcon,
   shadowUrl: markerShadow,
+});
+
+const iglesiaMapIcon = L.divIcon({
+  className: 'camp-map-church-marker',
+  html: renderToStaticMarkup(<Church size={19} strokeWidth={2.2} aria-hidden="true" />),
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+  popupAnchor: [0, -18],
 });
 
 const SERVICIOS_OPCIONES = ['agua', 'baños', 'electricidad', 'fogata', 'senderos', 'rio', 'carpa', 'cocina', 'estacionamiento'];
@@ -102,10 +115,14 @@ function MapViewportSync({ onMove }) {
 
 export default function BuscarLugares() {
   const { user } = useAuth();
-  const initialCenter = user?.iglesia_latitud != null && user?.iglesia_longitud != null
+  const { position, requestLocation } = useUserLocation();
+  const initialCenter = position
+    ? [position.latitude, position.longitude]
+    : user?.iglesia_latitud != null && user?.iglesia_longitud != null
     ? [Number(user.iglesia_latitud), Number(user.iglesia_longitud)]
     : CENTRO_LA_PAZ;
   const [lugares, setLugares] = useState([]);
+  const [iglesias, setIglesias] = useState([]);
   const [campingsOsm, setCampingsOsm] = useState([]);
   const [campingsOsmVisibles, setCampingsOsmVisibles] = useState(true);
   const [campingsOsmLoading, setCampingsOsmLoading] = useState(false);
@@ -128,6 +145,18 @@ export default function BuscarLugares() {
   const [mapZoom, setMapZoom] = useState(12);
   const [capa, setCapa] = useState('osm');
   const [lugarSeleccionado, setLugarSeleccionado] = useState(null);
+
+  useEffect(() => {
+    let activo = true;
+    authService.getIglesias()
+      .then(({ data }) => {
+        if (activo) setIglesias(data?.iglesias || []);
+      })
+      .catch(() => {
+        if (activo) setIglesias([]);
+      });
+    return () => { activo = false; };
+  }, []);
 
   useEffect(() => {
     if (!campingsOsmVisibles || !mapBounds) return undefined;
@@ -183,8 +212,17 @@ export default function BuscarLugares() {
   };
 
   useEffect(() => {
-    cargar();
-  }, []);
+    if (position) {
+      const nuevaUbicacion = [position.latitude, position.longitude];
+      setLat(String(position.latitude));
+      setLng(String(position.longitude));
+      setMapCenter(nuevaUbicacion);
+      setMapZoom(12);
+      cargar({ lat: position.latitude, lng: position.longitude });
+    } else {
+      cargar();
+    }
+  }, [position]);
 
   const aplicarFiltros = (event) => {
     event.preventDefault();
@@ -217,37 +255,20 @@ export default function BuscarLugares() {
       : [...actuales, servicio]);
   };
 
-  const centrarUbicacion = () => {
-    if (!navigator.geolocation) {
-      setMensajeUbicacion('Este dispositivo no permite compartir la ubicación.');
-      return;
-    }
+  const centrarUbicacion = async () => {
     setMensajeUbicacion('Buscando tu ubicación...');
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        const nuevaUbicacion = [coords.latitude, coords.longitude];
-        setLat(String(coords.latitude));
-        setLng(String(coords.longitude));
-        setMapCenter(nuevaUbicacion);
-        setMapZoom(12);
-        setMensajeUbicacion('');
-        cargar({ lat: coords.latitude, lng: coords.longitude });
-      },
-      () => setMensajeUbicacion('No se pudo obtener la ubicación. Revisa el permiso del navegador.'),
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    try {
+      await requestLocation();
+      setMensajeUbicacion('');
+    } catch (locationError) {
+      setMensajeUbicacion(locationError.message);
+    }
   };
 
   const seleccionarLugar = (lugar) => {
     setLugarSeleccionado(lugar.id);
     setMapCenter([Number(lugar.latitud), Number(lugar.longitud)]);
     setMapZoom(13);
-    setPanelAbierto(false);
-  };
-
-  const seleccionarCampingOsm = (camping) => {
-    setMapCenter([camping.latitud, camping.longitud]);
-    setMapZoom(15);
     setPanelAbierto(false);
   };
 
@@ -269,6 +290,31 @@ export default function BuscarLugares() {
           setMapZoom((current) => current === zoom ? current : zoom);
         }} />
         <TileLayer url={capaActual.url} attribution={capaActual.attribution} subdomains={capaActual.subdomains} />
+        {iglesias.filter((iglesia) => Number.isFinite(Number(iglesia.latitud)) && Number.isFinite(Number(iglesia.longitud))).map((iglesia) => (
+          <Marker
+            key={`iglesia-${iglesia.id}`}
+            position={[Number(iglesia.latitud), Number(iglesia.longitud)]}
+            icon={iglesiaMapIcon}
+          >
+            <Popup>
+              <div className="camp-map-popup">
+                <p className="camp-map-popup__eyebrow">Iglesia ACJ</p>
+                <h2>{iglesia.nombre}</h2>
+                {iglesia.direccion && <p>{iglesia.direccion}</p>}
+                {(iglesia.zona || iglesia.distrito) && <p>{[iglesia.zona, iglesia.distrito].filter(Boolean).join(' · ')}</p>}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+        {position && (
+          <CircleMarker
+            center={[position.latitude, position.longitude]}
+            radius={9}
+            pathOptions={{ color: '#ffffff', fillColor: '#2563eb', fillOpacity: 1, weight: 3 }}
+          >
+            <Popup>Tu ubicación</Popup>
+          </CircleMarker>
+        )}
         {campingsOsmVisibles && campingsOsm.map((camping) => (
           <CircleMarker
             key={camping.id}
@@ -336,13 +382,14 @@ export default function BuscarLugares() {
         </div>
 
         {panelAbierto && (
+          <>
           <div className="camp-map-panel">
             {panel === 'lugares' && (
               <>
                 <header className="camp-map-panel__header">
                   <p className="camp-map-kicker">ACJ CAMP · EXPLORAR</p>
                   <h1>Campamentos</h1>
-                  <p>{lugares.length} sitios ACJ · {campingsOsm.length} puntos OSM en el mapa</p>
+                  <p>{lugares.length} campamentos ACJ disponibles</p>
                 </header>
                 <form className="camp-map-search" onSubmit={aplicarFiltros}>
                   <Search size={17} aria-hidden="true" />
@@ -390,20 +437,6 @@ export default function BuscarLugares() {
                     )}
                   </div>
                 )}
-                {campingsOsm.length > 0 && (
-                  <section className="camp-map-osm-results" aria-label="Sitios de acampada de OpenStreetMap">
-                    <h2>Sitios de acampada OSM</h2>
-                    {campingsOsm.map((camping) => (
-                      <div className="camp-map-osm-result" key={camping.id}>
-                        <button type="button" onClick={() => seleccionarCampingOsm(camping)}>
-                          <span className="camp-map-osm-result__dot" />
-                          <span><strong>{camping.nombre}</strong><small>{camping.tipo === 'caravan_site' ? 'Sitio para caravanas' : 'Camping comunitario'}</small></span>
-                        </button>
-                        <a href={camping.osm_url} target="_blank" rel="noreferrer" aria-label={`Abrir ${camping.nombre} en OpenStreetMap`}>↗</a>
-                      </div>
-                    ))}
-                  </section>
-                )}
               </>
             )}
 
@@ -445,7 +478,7 @@ export default function BuscarLugares() {
                       {SERVICIOS_OPCIONES.map((servicio) => (
                         <label key={servicio}>
                           <input type="checkbox" checked={servicios.includes(servicio)} onChange={() => cambiarServicio(servicio)} />
-                          <span>{servicio}</span>
+                          <ServicioIcono servicio={servicio} />
                         </label>
                       ))}
                     </div>
@@ -457,7 +490,6 @@ export default function BuscarLugares() {
                     <button type="submit" className="camp-map-primary">Aplicar filtros</button>
                   </div>
                 </form>
-                <button type="button" className="camp-map-locate-inline" onClick={centrarUbicacion}><LocateFixed size={16} /> Usar mi ubicación actual</button>
               </>
             )}
 
@@ -500,13 +532,34 @@ export default function BuscarLugares() {
                   <p>Explora sitios registrados por clubes y aprobados para la comunidad.</p>
                 </header>
                 <div className="camp-map-info">
-                  <div><span className="camp-map-info__dot" /><span>Campamento activo</span></div>
-                  <p>Los marcadores muestran lugares disponibles. Selecciona uno para consultar capacidad, servicios y reseñas.</p>
-                  <p>Los marcadores verdes se consultan de OpenStreetMap según el área visible. Los campamentos ACJ aparecen con su ficha y reseñas del registro local.</p>
+                  <div><MapPin size={16} className="text-adventista-azul" /><span>Campamentos ACJ · {lugares.length} en esta búsqueda</span></div>
+                  <p>Destinos registrados por clubes ACJ. Abre una ficha para consultar servicios, reseñas, disponibilidad y contacto.</p>
+                  <div className="mt-4 border-t border-slate-200 pt-2"><span className="camp-map-info__dot" /><span>Puntos comunitarios de OpenStreetMap</span></div>
+                  <p>Los marcadores verdes son sitios publicados en OpenStreetMap y siguen el área visible del mapa.</p>
+                  {lugares.length > 0 ? (
+                    <ul className="mt-3 divide-y divide-slate-200 border-y border-slate-200">
+                      {lugares.slice(0, 5).map((lugar) => (
+                        <li key={lugar.id}>
+                          <Link to={`/lugar/${lugar.id}`} className="flex items-center justify-between gap-3 py-3 text-inherit no-underline hover:text-adventista-azul">
+                            <span className="min-w-0">
+                              <strong className="block truncate text-sm">{lugar.nombre}</strong>
+                              <small className="block truncate text-xs text-slate-500">{lugar.direccion || 'Bolivia'}</small>
+                            </span>
+                            {lugar.capacidad_maxima && <small className="shrink-0 text-xs text-slate-500">{lugar.capacidad_maxima} personas</small>}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="mt-3 text-sm">No hay campamentos ACJ dentro del radio seleccionado.</p>}
+                  {lugares.length > 5 && <button type="button" onClick={() => setPanel('lugares')} className="mt-3 border-0 bg-transparent p-0 text-sm font-semibold text-adventista-azul">Ver los {lugares.length} campamentos ACJ</button>}
                 </div>
               </>
             )}
           </div>
+          <button type="button" className="camp-map-location-action" onClick={centrarUbicacion}>
+            <LocateFixed size={16} /> Usar mi ubicación actual
+          </button>
+          </>
         )}
       </aside>
 

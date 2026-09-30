@@ -12,6 +12,8 @@ const buildUserPayload = (user) => ({
   rol: user.rol,
   iglesia_id: user.iglesia_id,
   iglesia_nombre: user.iglesia_nombre,
+  club_id: user.club_id,
+  club_nombre: user.club_nombre,
   estado: user.estado || 'activo',
   iglesia_latitud: user.iglesia_latitud,
   iglesia_longitud: user.iglesia_longitud,
@@ -79,9 +81,16 @@ exports.login = async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT u.*, i.nombre AS iglesia_nombre, i.latitud AS iglesia_latitud, i.longitud AS iglesia_longitud
+      `SELECT u.*, i.nombre AS iglesia_nombre, i.latitud AS iglesia_latitud, i.longitud AS iglesia_longitud,
+              club.id AS club_id, club.nombre AS club_nombre
        FROM usuarios u
        LEFT JOIN iglesias i ON u.iglesia_id = i.id
+       LEFT JOIN LATERAL (
+         SELECT c.id, c.nombre
+         FROM club_lideres cl JOIN clubs c ON c.id = cl.club_id
+         WHERE cl.lider_id = u.id
+         ORDER BY cl.created_at DESC LIMIT 1
+       ) club ON TRUE
        WHERE u.email = $1`,
       [email]
     );
@@ -142,9 +151,16 @@ exports.getProfile = async (req, res) => {
       `SELECT u.id, u.nombre, u.email, u.telefono, u.rol, u.iglesia_id, u.created_at, u.ultimo_login,
               COALESCE(u.estado, 'activo') AS estado,
               i.nombre AS iglesia_nombre, i.direccion AS iglesia_direccion, i.zona, i.distrito,
-              i.latitud AS iglesia_latitud, i.longitud AS iglesia_longitud
+              i.latitud AS iglesia_latitud, i.longitud AS iglesia_longitud,
+              club.id AS club_id, club.nombre AS club_nombre
        FROM usuarios u
        LEFT JOIN iglesias i ON u.iglesia_id = i.id
+            LEFT JOIN LATERAL (
+              SELECT c.id, c.nombre
+              FROM club_lideres cl JOIN clubs c ON c.id = cl.club_id
+              WHERE cl.lider_id = u.id
+              ORDER BY cl.created_at DESC LIMIT 1
+            ) club ON TRUE
        WHERE u.id = $1`,
       [req.user.id]
     );
@@ -157,7 +173,8 @@ exports.getProfile = async (req, res) => {
       `SELECT c.id, c.nombre, c.tipo, c.logo_url, i.nombre AS iglesia_nombre
        FROM clubs c
        LEFT JOIN iglesias i ON c.iglesia_id = i.id
-       WHERE c.director_id = $1`,
+       WHERE c.director_id = $1
+         OR EXISTS (SELECT 1 FROM club_lideres cl WHERE cl.club_id = c.id AND cl.lider_id = $1)`,
       [req.user.id]
     );
 
@@ -187,29 +204,96 @@ exports.getIglesias = async (req, res) => {
 };
 
 exports.updateProfile = async (req, res) => {
+  let client;
   try {
-    const { nombre, telefono, iglesia_id } = req.body;
-    const userId = req.user.id;
+    const { nombre, telefono, iglesia_id, club_id } = req.body;
+    client = await pool.connect();
+    await client.query('BEGIN');
 
-    if (iglesia_id != null) {
-      const church = await pool.query('SELECT id FROM iglesias WHERE id = $1', [iglesia_id]);
-      if (!church.rows.length) return res.status(400).json({ success: false, error: 'La iglesia seleccionada no existe' });
+    const currentResult = await client.query('SELECT rol, iglesia_id FROM usuarios WHERE id = $1 FOR UPDATE', [req.user.id]);
+    if (!currentResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
     }
 
-    const result = await pool.query(
+    const current = currentResult.rows[0];
+    const isLeader = current.rol === 'lider';
+    const canManageChurch = ['director', 'admin'].includes(current.rol);
+    if (club_id !== undefined && !isLeader) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, error: 'Solo los líderes pueden elegir su club desde el perfil' });
+    }
+    if (iglesia_id !== undefined && !canManageChurch && !isLeader) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, error: 'Solo los líderes y directores pueden cambiar la iglesia de esta cuenta' });
+    }
+
+    const churchId = iglesia_id !== undefined ? iglesia_id : current.iglesia_id;
+    if (churchId != null) {
+      const church = await client.query('SELECT id FROM iglesias WHERE id = $1', [churchId]);
+      if (!church.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: 'La iglesia seleccionada no existe' });
+      }
+    }
+
+    const previousClubResult = isLeader
+      ? await client.query('SELECT club_id FROM club_lideres WHERE lider_id = $1 ORDER BY created_at DESC LIMIT 1', [req.user.id])
+      : { rows: [] };
+    const previousClubId = previousClubResult.rows[0]?.club_id ?? null;
+    let selectedClubId = club_id === undefined
+      ? previousClubId
+      : club_id === '' || club_id == null ? null : Number(club_id);
+    if (isLeader && iglesia_id !== undefined && club_id === undefined
+      && previousClubId != null && Number(iglesia_id) !== Number(current.iglesia_id)) {
+      selectedClubId = null;
+    }
+    if (isLeader && selectedClubId != null) {
+      const club = await client.query('SELECT id FROM clubs WHERE id = $1 AND iglesia_id = $2', [selectedClubId, churchId]);
+      if (!club.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: 'El club debe pertenecer a la iglesia seleccionada' });
+      }
+    }
+
+    await client.query(
       `UPDATE usuarios
        SET nombre = COALESCE($1, nombre),
            telefono = COALESCE($2, telefono),
            iglesia_id = COALESCE($3, iglesia_id)
-       WHERE id = $4
-       RETURNING id, nombre, email, telefono, rol, iglesia_id`,
-      [nombre, telefono, iglesia_id, userId]
+       WHERE id = $4`,
+      [nombre, telefono, churchId, req.user.id]
     );
+
+    if (isLeader && (iglesia_id !== undefined || club_id !== undefined)) {
+      await client.query('DELETE FROM club_lideres WHERE lider_id = $1', [req.user.id]);
+      if (selectedClubId != null) {
+        await client.query('INSERT INTO club_lideres (club_id, lider_id) VALUES ($1, $2)', [selectedClubId, req.user.id]);
+      }
+    }
+
+    const result = await client.query(
+      `SELECT u.id, u.nombre, u.email, u.telefono, u.rol, u.iglesia_id,
+              i.nombre AS iglesia_nombre, i.latitud AS iglesia_latitud, i.longitud AS iglesia_longitud,
+              club.id AS club_id, club.nombre AS club_nombre
+       FROM usuarios u
+       LEFT JOIN iglesias i ON i.id = u.iglesia_id
+       LEFT JOIN LATERAL (
+         SELECT c.id, c.nombre FROM club_lideres cl JOIN clubs c ON c.id = cl.club_id
+         WHERE cl.lider_id = u.id ORDER BY cl.created_at DESC LIMIT 1
+       ) club ON TRUE
+       WHERE u.id = $1`,
+      [req.user.id]
+    );
+    await client.query('COMMIT');
 
     res.json({ success: true, message: 'Perfil actualizado exitosamente', user: result.rows[0] });
   } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('Error actualizando perfil:', error);
     res.status(500).json({ success: false, error: 'Error al actualizar perfil' });
+  } finally {
+    client?.release();
   }
 };
 

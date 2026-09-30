@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
 import StarRating from '../components/StarRating';
+import ServicioIcono from '../components/ServicioIcono';
 import uploadService from '../services/uploadService';
 import clubService from '../services/clubService';
 
@@ -28,6 +29,7 @@ L.Icon.Default.mergeOptions({
 
 const fechaComoClave = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const fechaReservaComoClave = (date) => String(date).slice(0, 10);
+const reservaOcupaFecha = (reserva) => ['confirmada', 'completada'].includes(reserva.estado);
 const normalizarFotos = (value) => {
   let fotos = value;
   if (typeof fotos === 'string') {
@@ -120,7 +122,7 @@ export default function DetalleLugar() {
       return;
     }
     const rangoOcupado = reservasLugar.some((reserva) =>
-      reserva.estado !== 'cancelada' &&
+      reservaOcupaFecha(reserva) &&
       fechaReservaComoClave(reserva.fecha_inicio) <= fechaFin &&
       fechaReservaComoClave(reserva.fecha_fin) >= fechaInicio
     );
@@ -290,8 +292,8 @@ export default function DetalleLugar() {
               <div className="flex flex-wrap gap-2">
                 {Array.isArray(lugar.servicios) && lugar.servicios.length > 0 ? (
                   lugar.servicios.map((s) => (
-                    <span key={s} className="rounded-full bg-adventista-azul/10 px-3 py-1 text-xs font-medium capitalize text-adventista-azul">
-                      {s}
+                    <span key={s} className="rounded-full bg-adventista-azul/10 px-3 py-1 text-xs font-medium text-adventista-azul">
+                      <ServicioIcono servicio={s} iconClassName="h-3.5 w-3.5" />
                     </span>
                   ))
                 ) : (
@@ -357,8 +359,10 @@ export default function DetalleLugar() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700">Propósito</label>
+                <label className="block text-sm font-medium text-slate-700">Motivo de la reserva</label>
                 <input
+                  required
+                  maxLength={100}
                   value={proposito}
                   onChange={(e) => setProposito(e.target.value)}
                   placeholder="Campamento, caminata, retiro..."
@@ -387,7 +391,7 @@ export default function DetalleLugar() {
                 const fecha = fechaComoClave(date);
                 const hoy = fechaComoClave(new Date());
                 return fecha < hoy || reservasLugar.some((reserva) =>
-                  reserva.estado !== 'cancelada' &&
+                  reservaOcupaFecha(reserva) &&
                   fechaReservaComoClave(reserva.fecha_inicio) <= fecha &&
                   fechaReservaComoClave(reserva.fecha_fin) >= fecha
                 );
@@ -395,7 +399,7 @@ export default function DetalleLugar() {
               tileClassName={({ date, view }) => {
                 if (view !== 'month') return undefined;
                 const dateKey = fechaComoClave(date);
-                const reserva = reservasLugar.find((item) => item.estado !== 'cancelada' &&
+                const reserva = reservasLugar.find((item) => reservaOcupaFecha(item) &&
                   fechaReservaComoClave(item.fecha_inicio) <= dateKey && fechaReservaComoClave(item.fecha_fin) >= dateKey);
                 if (reserva) return `calendar-${reserva.estado}`;
                 if (dateKey === fechaInicio) return 'calendar-seleccion-inicio';
@@ -404,8 +408,7 @@ export default function DetalleLugar() {
               }}
             />
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-600" aria-label="Leyenda del calendario">
-              <span className="inline-flex items-center gap-1.5"><i className="calendar-legend-dot calendar-legend-pendiente" /> Pendiente</span>
-              <span className="inline-flex items-center gap-1.5"><i className="calendar-legend-dot calendar-legend-confirmada" /> Confirmada</span>
+              <span className="inline-flex items-center gap-1.5"><i className="calendar-legend-dot calendar-legend-confirmada" /> Ocupado (confirmado)</span>
               <span className="inline-flex items-center gap-1.5"><i className="calendar-legend-dot calendar-legend-seleccion" /> Fechas elegidas</span>
             </div>
             <p className="mt-2 text-xs text-slate-500">Selecciona un día de inicio y otro de fin. Las fechas ocupadas y pasadas no se pueden elegir.</p>
@@ -425,6 +428,15 @@ export default function DetalleLugar() {
                     <StarRating rating={r.calificacion} size={14} />
                   </div>
                   <p className="mt-1 text-sm text-slate-600">{r.comentario || 'Sin comentario'}</p>
+                  {normalizarFotos(r.fotos).length > 0 && (
+                    <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label={`Fotos de la reseña de ${r.usuario_nombre}`}>
+                      {normalizarFotos(r.fotos).map((foto, index) => (
+                        <a key={`${r.id}-${foto}`} href={foto} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-slate-200">
+                          <img src={foto} alt={`Foto ${index + 1} de la reseña de ${r.usuario_nombre}`} loading="lazy" className="aspect-[4/3] h-full w-full object-cover transition hover:scale-105" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   <p className="mt-1 text-xs text-slate-400">{new Date(r.created_at).toLocaleDateString()}</p>
                 </div>
               ))}

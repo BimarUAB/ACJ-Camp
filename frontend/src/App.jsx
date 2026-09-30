@@ -10,39 +10,50 @@ import MisReservas from './pages/MisReservas';
 import AdminPanel from './pages/AdminPanel';
 import GestionClubs from './pages/GestionClubs';
 import ProponerLugar from './pages/ProponerLugar';
+import { LocationProvider } from './context/LocationContext';
+import LocationPrompt from './components/LocationPrompt';
+import MiPerfil from './pages/MiPerfil';
 
 function App() {
   return (
     <AuthProvider>
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/buscar" element={<BuscarLugares />} />
-          <Route path="/lugar/:id" element={<DetalleLugar />} />
-          <Route path="/mis-clubes" element={
-            <ProtectedRoute requireDirector>
-              <GestionClubs />
-            </ProtectedRoute>
-          } />
-          <Route path="/mis-lugares" element={
-            <ProtectedRoute>
-              <ProponerLugar />
-            </ProtectedRoute>
-          } />
-          <Route path="/reservas" element={
-            <ProtectedRoute>
-              <MisReservas />
-            </ProtectedRoute>
-          } />
-          <Route path="/admin" element={
-            <ProtectedRoute requireAdmin>
-              <AdminPanel />
-            </ProtectedRoute>
-          } />
-        </Routes>
-      </div>
+      <LocationProvider>
+        <LocationPrompt />
+        <div className="min-h-screen bg-[var(--camp-paper)]">
+          <Navbar />
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/mi-perfil" element={
+              <ProtectedRoute>
+                <MiPerfil />
+              </ProtectedRoute>
+            } />
+            <Route path="/buscar" element={<BuscarLugares />} />
+            <Route path="/lugar/:id" element={<DetalleLugar />} />
+            <Route path="/mis-clubes" element={
+              <ProtectedRoute requireDirector>
+                <GestionClubs />
+              </ProtectedRoute>
+            } />
+            <Route path="/mis-lugares" element={
+              <ProtectedRoute>
+                <ProponerLugar />
+              </ProtectedRoute>
+            } />
+            <Route path="/reservas" element={
+              <ProtectedRoute>
+                <MisReservas />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin" element={
+              <ProtectedRoute requireAdmin>
+                <AdminPanel />
+              </ProtectedRoute>
+            } />
+          </Routes>
+        </div>
+      </LocationProvider>
     </AuthProvider>
   );
 }

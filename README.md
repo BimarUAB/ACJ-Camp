@@ -65,6 +65,30 @@ psql -U postgres -d campusab -f database/schema.sql
 
 En Windows, si PostgreSQL no está en `PATH`, usa las rutas a `createdb.exe` y `psql.exe` de la versión instalada. Para una base ya existente no vuelvas a ejecutar `schema.sql`: revisa sus datos y aplica `database/migrate.sql`. La migración se detiene ante conflictos históricos para evitar borrar registros.
 
+Para que solo las reservas aceptadas ocupen fechas, ejecuta también la migración aditiva de reservas:
+
+```bash
+psql -U postgres -d campusab -f database/migrate-reservas-confirmacion.sql
+```
+
+La migración conserva las filas y se detiene si encuentra reservas confirmadas con fechas solapadas. Las solicitudes pendientes no bloquean el calendario.
+
+Para dar al líder 48 horas para contactar el lugar y confirmar su solicitud, ejecuta:
+
+```bash
+psql -U postgres -d campusab -f database/migrate-reservas-vencimiento.sql
+```
+
+El líder ve el código de referencia y teléfono del lugar en **Mis reservas**. Si confirma dentro del plazo, las fechas se ocupan; si no, la solicitud pasa a cancelada y las fechas quedan disponibles.
+
+Para habilitar la asignación de líderes a clubes en una base existente, ejecuta esta migración aditiva; crea la relación sin modificar usuarios ni clubes existentes:
+
+```bash
+psql -U postgres -d campusab -f database/migrate-club-lideres.sql
+```
+
+En una base nueva, `schema.sql` ya incluye esta relación.
+
 Para cargar ocho lugares marcados explícitamente como demostración, ejecuta el seed idempotente desde la raíz después de que PostgreSQL acepte conexiones:
 
 ```bash

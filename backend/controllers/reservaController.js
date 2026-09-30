@@ -1,9 +1,11 @@
 const pool = require('../config/database');
+const { expirePendingReservations } = require('../utils/reservationExpiry');
 
 const isAdmin = (req) => req.user?.rol === 'admin';
 
 exports.getAllReservas = async (req, res) => {
   try {
+    await expirePendingReservations();
     const { lugar_id, estado, club_id } = req.query;
     let conditions = [];
     let params = [];
@@ -25,7 +27,9 @@ exports.getAllReservas = async (req, res) => {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const result = await pool.query(`
-      SELECT r.*, l.nombre AS lugar_nombre, c.nombre AS club_nombre, u.nombre AS usuario_nombre
+                  SELECT r.*, l.nombre AS lugar_nombre, l.telefono AS lugar_telefono, l.contacto AS lugar_contacto,
+                    l.propietario AS lugar_propietario, c.nombre AS club_nombre, c.tipo AS club_tipo,
+              u.nombre AS usuario_nombre, u.email AS usuario_email, u.telefono AS usuario_telefono
       FROM reservas r
       LEFT JOIN lugares_camping l ON r.lugar_id = l.id
       LEFT JOIN clubs c ON r.club_id = c.id
@@ -43,11 +47,15 @@ exports.getAllReservas = async (req, res) => {
 
 exports.getMyReservas = async (req, res) => {
   try {
+    await expirePendingReservations();
     const result = await pool.query(`
-      SELECT r.*, l.nombre AS lugar_nombre, c.nombre AS club_nombre
+            SELECT r.*, l.nombre AS lugar_nombre, l.telefono AS lugar_telefono,
+              l.contacto AS lugar_contacto, l.propietario AS lugar_propietario, c.nombre AS club_nombre,
+              u.nombre AS usuario_nombre, u.email AS usuario_email
       FROM reservas r
       LEFT JOIN lugares_camping l ON r.lugar_id = l.id
       LEFT JOIN clubs c ON r.club_id = c.id
+            LEFT JOIN usuarios u ON r.usuario_id = u.id
       WHERE r.usuario_id = $1
       ORDER BY r.fecha_inicio DESC
     `, [req.user.id]);
@@ -65,7 +73,7 @@ exports.getReservasByLugar = async (req, res) => {
     const result = await pool.query(`
       SELECT r.id, r.fecha_inicio, r.fecha_fin, r.estado
       FROM reservas r
-      WHERE r.lugar_id = $1 AND r.estado NOT IN ('cancelada')
+      WHERE r.lugar_id = $1 AND r.estado IN ('confirmada', 'completada')
       ORDER BY r.fecha_inicio ASC
     `, [id]);
 
@@ -79,10 +87,11 @@ exports.getReservasByLugar = async (req, res) => {
 exports.createReserva = async (req, res) => {
   let client;
   try {
+    await expirePendingReservations();
     const { lugar_id, club_id, fecha_inicio, fecha_fin, proposito, notas } = req.body;
 
-    if (!lugar_id || !fecha_inicio || !fecha_fin) {
-      return res.status(400).json({ success: false, error: 'Lugar, fecha de inicio y fecha de fin son obligatorios' });
+    if (!lugar_id || !fecha_inicio || !fecha_fin || !proposito?.trim()) {
+      return res.status(400).json({ success: false, error: 'Lugar, fechas y motivo son obligatorios' });
     }
 
     if (new Date(fecha_inicio) > new Date(fecha_fin)) {
@@ -127,7 +136,7 @@ exports.createReserva = async (req, res) => {
 
     const conflicto = await client.query(
       `SELECT id FROM reservas
-       WHERE lugar_id = $1 AND estado <> 'cancelada'
+        WHERE lugar_id = $1 AND estado IN ('confirmada', 'completada')
          AND (fecha_inicio, fecha_fin + 1) OVERLAPS ($2::date, $3::date + 1)
        LIMIT 1`,
       [lugar_id, fecha_inicio, fecha_fin]
@@ -138,16 +147,16 @@ exports.createReserva = async (req, res) => {
     }
 
     const result = await client.query(
-      `INSERT INTO reservas (lugar_id, club_id, usuario_id, fecha_inicio, fecha_fin, proposito, notas)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO reservas (lugar_id, club_id, usuario_id, fecha_inicio, fecha_fin, proposito, notas, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + INTERVAL '48 hours')
        RETURNING *`,
-      [lugar_id, club_id || null, req.user.id, fecha_inicio, fecha_fin, proposito || null, notas || null]
+      [lugar_id, club_id || null, req.user.id, fecha_inicio, fecha_fin, proposito.trim(), notas || null]
     );
     await client.query('COMMIT');
 
     res.status(201).json({
       success: true,
-      message: 'Reserva creada exitosamente. Pendiente de confirmación.',
+      message: 'Solicitud creada. Tienes 48 horas para contactar el lugar y confirmar tu reserva.',
       reserva: result.rows[0]
     });
   } catch (error) {
@@ -159,6 +168,75 @@ exports.createReserva = async (req, res) => {
     }
     console.error('Error creando reserva:', error);
     res.status(500).json({ success: false, error: 'Error al crear reserva' });
+  } finally {
+    client?.release();
+  }
+};
+
+exports.confirmarConLugar = async (req, res) => {
+  let client;
+  try {
+    await expirePendingReservations();
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const existingResult = await client.query(
+      'SELECT * FROM reservas WHERE id = $1 FOR UPDATE',
+      [req.params.id]
+    );
+    if (!existingResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Reserva no encontrada' });
+    }
+
+    const reserva = existingResult.rows[0];
+    if (Number(reserva.usuario_id) !== Number(req.user.id) && !isAdmin(req)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ success: false, error: 'Solo quien solicitó la reserva puede confirmarla' });
+    }
+    if (reserva.estado !== 'pendiente') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: 'Esta reserva ya no está pendiente de confirmación' });
+    }
+    if (!reserva.expires_at || new Date(reserva.expires_at) <= new Date()) {
+      await client.query("UPDATE reservas SET estado = 'cancelada' WHERE id = $1", [reserva.id]);
+      await client.query('COMMIT');
+      return res.status(410).json({ success: false, error: 'El plazo de 48 horas venció y las fechas quedaron disponibles' });
+    }
+
+    await client.query('SELECT id FROM lugares_camping WHERE id = $1 FOR UPDATE', [reserva.lugar_id]);
+    const conflicto = await client.query(
+      `SELECT id FROM reservas
+       WHERE lugar_id = $1 AND id <> $2 AND estado IN ('confirmada', 'completada')
+         AND (fecha_inicio, fecha_fin + 1) OVERLAPS ($3::date, $4::date + 1)
+       LIMIT 1`,
+      [reserva.lugar_id, reserva.id, reserva.fecha_inicio, reserva.fecha_fin]
+    );
+    if (conflicto.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, error: 'Otro evento ya confirmó fechas que se cruzan con esta reserva' });
+    }
+
+    const updated = await client.query(
+      `UPDATE reservas SET estado = 'confirmada'
+       WHERE id = $1 AND estado = 'pendiente' AND expires_at > NOW()
+       RETURNING *`,
+      [reserva.id]
+    );
+    if (!updated.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(410).json({ success: false, error: 'El plazo de confirmación venció' });
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Reserva confirmada. Las fechas ahora aparecen ocupadas.', reserva: updated.rows[0] });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    if (error.code === '23P01') {
+      return res.status(409).json({ success: false, error: 'Otro evento ya confirmó estas fechas' });
+    }
+    console.error('Error confirmando reserva con el lugar:', error);
+    res.status(500).json({ success: false, error: 'Error al confirmar la reserva' });
   } finally {
     client?.release();
   }
@@ -197,6 +275,17 @@ exports.updateReserva = async (req, res) => {
       newEstado = estado === 'cancelada' ? 'cancelada' : existing.estado;
     }
 
+    const transicionesAdmin = {
+      pendiente: ['cancelada'],
+      confirmada: ['completada', 'cancelada'],
+      completada: [],
+      cancelada: [],
+    };
+    if (isAdmin(req) && estado && estado !== existing.estado && !transicionesAdmin[existing.estado]?.includes(estado)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: 'El cambio de estado de esta reserva no está permitido' });
+    }
+
     if (new Date(newFechaInicio) > new Date(newFechaFin)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ success: false, error: 'Fechas inválidas' });
@@ -208,10 +297,11 @@ exports.updateReserva = async (req, res) => {
       [lugaresABloquear]
     );
 
-    if (newEstado !== 'cancelada') {
+    const estadoFinal = newEstado || existing.estado;
+    if (['confirmada', 'completada'].includes(estadoFinal)) {
       const conflicto = await client.query(
         `SELECT id FROM reservas
-         WHERE lugar_id = $1 AND id <> $2 AND estado <> 'cancelada'
+         WHERE lugar_id = $1 AND id <> $2 AND estado IN ('confirmada', 'completada')
            AND (fecha_inicio, fecha_fin + 1) OVERLAPS ($3::date, $4::date + 1)
          LIMIT 1`,
         [newLugarId, id, newFechaInicio, newFechaFin]

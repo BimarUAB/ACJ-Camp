@@ -3,6 +3,7 @@ import { Camera, MapPin, Pencil, Plus, Save, Send, X } from 'lucide-react';
 import lugarService from '../services/lugarService';
 import uploadService from '../services/uploadService';
 import Loading from '../components/Loading';
+import ServicioIcono from '../components/ServicioIcono';
 
 const SERVICIOS = ['agua', 'baños', 'electricidad', 'fogata', 'senderos', 'rio', 'carpa', 'cocina', 'estacionamiento'];
 const FORM_INICIAL = {
@@ -171,7 +172,7 @@ export default function ProponerLugar() {
         <fieldset className="md:col-span-2">
           <legend className="mb-2 text-sm font-medium text-slate-700">Servicios disponibles</legend>
           <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {SERVICIOS.map((servicio) => <label key={servicio} className="inline-flex items-center gap-2 text-sm capitalize text-slate-700"><input type="checkbox" checked={form.servicios.includes(servicio)} onChange={() => cambiarServicio(servicio)} />{servicio}</label>)}
+            {SERVICIOS.map((servicio) => <label key={servicio} className="inline-flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={form.servicios.includes(servicio)} onChange={() => cambiarServicio(servicio)} /><ServicioIcono servicio={servicio} /></label>)}
           </div>
         </fieldset>
         <label className="text-sm font-medium text-slate-700 md:col-span-2">

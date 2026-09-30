@@ -1,20 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Swal from 'sweetalert2';
-import { Users, MapPin, CalendarDays, BarChart3, CheckCircle, XCircle, ShieldCheck, Download } from 'lucide-react';
+import { Building2, Users, MapPin, CalendarDays, BarChart3, CheckCircle, XCircle, ShieldCheck, Download, Trash2 } from 'lucide-react';
 import lugarService from '../services/lugarService';
 import reservaService from '../services/reservaService';
 import authService from '../services/authService';
 import reportService from '../services/reportService';
 import uploadService from '../services/uploadService';
+import clubService from '../services/clubService';
+import iglesiaService from '../services/iglesiaService';
 import { useAuth } from '../context/AuthContext';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
+import ServicioIcono from '../components/ServicioIcono';
 
 const TABS = [
   { id: 'stats', label: 'Estadísticas', icon: BarChart3 },
   { id: 'lugares', label: 'Lugares', icon: MapPin },
   { id: 'reservas', label: 'Reservas', icon: CalendarDays },
+  { id: 'iglesias', label: 'Iglesias y clubes', icon: Building2 },
   { id: 'usuarios', label: 'Usuarios', icon: Users },
 ];
 
@@ -34,6 +38,7 @@ export default function AdminPanel() {
   const [reporteZona, setReporteZona] = useState([]);
   const [lugaresPopulares, setLugaresPopulares] = useState([]);
   const [iglesias, setIglesias] = useState([]);
+  const [directorioIglesias, setDirectorioIglesias] = useState([]);
   const [busquedaUsuario, setBusquedaUsuario] = useState('');
   const [usuarioEditando, setUsuarioEditando] = useState(null);
   const [formUsuario, setFormUsuario] = useState({ nombre: '', email: '', telefono: '', iglesia_id: '' });
@@ -58,7 +63,7 @@ export default function AdminPanel() {
     try {
       setLoading(true);
       setError('');
-      const [statsRes, lugRes, resRes, usrRes, mesRes, zonaRes, popularesRes, iglesiasRes] = await Promise.all([
+      const [statsRes, lugRes, resRes, usrRes, mesRes, zonaRes, popularesRes, iglesiasRes, directorioRes] = await Promise.all([
         reportService.getDashboardStats(),
         lugarService.getAll({ estado: 'todos' }),
         reservaService.getAll(),
@@ -66,7 +71,8 @@ export default function AdminPanel() {
         reportService.getReservasPorMes(),
         reportService.getReservasPorZona(),
         reportService.getLugaresPopulares(),
-        authService.getIglesias()
+        authService.getIglesias(),
+        clubService.getDirectory()
       ]);
       setStats(statsRes.data?.stats || null);
       setLugares(lugRes.data?.lugares || []);
@@ -76,6 +82,7 @@ export default function AdminPanel() {
       setReporteZona(zonaRes.data?.reservas || []);
       setLugaresPopulares(popularesRes.data?.lugares || []);
       setIglesias(iglesiasRes.data?.iglesias || []);
+      setDirectorioIglesias(directorioRes.data?.iglesias || []);
     } catch (err) {
       setError(err.response?.data?.error || 'Error al cargar panel de administración');
     } finally {
@@ -210,7 +217,13 @@ export default function AdminPanel() {
   const actualizarEstadoReserva = async (id, estado) => {
     try {
       await reservaService.update(id, { estado });
-      cargarTodo();
+      await cargarTodo();
+      await Swal.fire({
+        title: estado === 'confirmada' ? 'Reserva aceptada' : estado === 'cancelada' ? 'Reserva rechazada' : 'Reserva completada',
+        text: estado === 'confirmada' ? 'Las fechas ahora aparecen ocupadas para los demás.' : undefined,
+        icon: 'success',
+        confirmButtonText: 'Entendido'
+      });
     } catch (err) {
       setError(err.response?.data?.error || 'Error al actualizar reserva');
     }
@@ -227,6 +240,44 @@ export default function AdminPanel() {
       a.click();
     } catch (err) {
       setError('Error al exportar Excel');
+    }
+  };
+
+  const eliminarIglesia = async (iglesia) => {
+    const confirmation = await Swal.fire({
+      title: `¿Eliminar ${iglesia.nombre}?`,
+      text: 'Solo se podrá eliminar si no tiene usuarios ni clubes asociados.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Eliminar iglesia',
+      cancelButtonText: 'Volver'
+    });
+    if (!confirmation.isConfirmed) return;
+    try {
+      await iglesiaService.delete(iglesia.id);
+      await cargarTodo();
+      await Swal.fire({ title: 'Iglesia eliminada', icon: 'success', confirmButtonText: 'Entendido' });
+    } catch (err) {
+      setError(err.response?.data?.error || 'No se pudo eliminar la iglesia.');
+    }
+  };
+
+  const eliminarClub = async (club) => {
+    const confirmation = await Swal.fire({
+      title: `¿Eliminar ${club.nombre}?`,
+      text: 'La cuenta de los líderes se conserva. No se podrá borrar si tiene reservas asociadas.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Eliminar club',
+      cancelButtonText: 'Volver'
+    });
+    if (!confirmation.isConfirmed) return;
+    try {
+      await clubService.delete(club.id);
+      await cargarTodo();
+      await Swal.fire({ title: 'Club eliminado', icon: 'success', confirmButtonText: 'Entendido' });
+    } catch (err) {
+      setError(err.response?.data?.error || 'No se pudo eliminar el club.');
     }
   };
 
@@ -320,6 +371,58 @@ export default function AdminPanel() {
         </div>
       )}
 
+      {tab === 'iglesias' && (
+        <section className="space-y-4" aria-label="Directorio de iglesias y clubes">
+          {directorioIglesias.map((iglesia) => (
+            <article key={iglesia.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <header className="flex items-start gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+                <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-adventista-azul" />
+                <div className="min-w-0">
+                  <h2 className="font-semibold text-slate-900">{iglesia.nombre}</h2>
+                  {(iglesia.direccion || iglesia.zona || iglesia.distrito) && <p className="mt-1 text-sm text-slate-600">{[iglesia.direccion, iglesia.zona, iglesia.distrito].filter(Boolean).join(' · ')}</p>}
+                </div>
+                <span className="ml-auto shrink-0 text-xs text-slate-500">{iglesia.clubs.length} {iglesia.clubs.length === 1 ? 'club' : 'clubes'}</span>
+                <button type="button" onClick={() => eliminarIglesia(iglesia)} title={`Eliminar iglesia ${iglesia.nombre}`} aria-label={`Eliminar iglesia ${iglesia.nombre}`} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-300 text-slate-500 hover:border-red-300 hover:text-red-700">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </header>
+              <div className="divide-y divide-slate-200 px-5">
+                {iglesia.clubs.map((club) => (
+                  <section key={club.id} className="py-4">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <div>
+                        <h3 className="font-medium text-slate-900">{club.nombre}</h3>
+                        <p className="mt-0.5 text-xs capitalize text-slate-500">{club.tipo}{club.director_nombre ? ` · Director: ${club.director_nombre}` : ''}</p>
+                      </div>
+                      <span className="text-xs text-slate-500">{club.lideres.length} {club.lideres.length === 1 ? 'líder' : 'líderes'}</span>
+                      <button type="button" onClick={() => eliminarClub(club)} title={`Eliminar club ${club.nombre}`} aria-label={`Eliminar club ${club.nombre}`} className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-300 text-slate-500 hover:border-red-300 hover:text-red-700">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {club.lideres.length > 0 ? (
+                      <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {club.lideres.map((lider) => (
+                          <li key={lider.id} className="flex min-w-0 items-start gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                            <Users className="mt-0.5 h-4 w-4 shrink-0 text-adventista-verde" />
+                            <span className="min-w-0">
+                              <strong className="block truncate text-sm font-medium text-slate-800">{lider.nombre}</strong>
+                              <span className="block truncate text-xs text-slate-500">{lider.email}{lider.telefono ? ` · ${lider.telefono}` : ''}</span>
+                              {lider.estado === 'inactivo' && <span className="text-xs font-medium text-red-700">Cuenta inactiva</span>}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : <p className="mt-3 text-sm text-slate-500">Este club todavía no tiene líderes asignados.</p>}
+                  </section>
+                ))}
+                {iglesia.clubs.length === 0 && <p className="py-4 text-sm text-slate-500">Esta iglesia todavía no tiene clubes registrados.</p>}
+              </div>
+            </article>
+          ))}
+          {directorioIglesias.length === 0 && <p className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">No hay iglesias registradas.</p>}
+        </section>
+      )}
+
       {tab === 'lugares' && (
         <>
         {lugares.some((lugar) => lugar.estado === 'pendiente') && (
@@ -382,7 +485,7 @@ export default function AdminPanel() {
                 <div className="flex flex-wrap gap-2">
                   {SERVICIOS_OPCIONES.map((s) => (
                     <button key={s} type="button" onClick={() => toggleServicio(s)} className={`rounded-full px-3 py-1 text-xs capitalize ${formLugar.servicios.includes(s) ? 'bg-adventista-azul text-white' : 'bg-slate-100 text-slate-700'}`}>
-                      {s}
+                      <ServicioIcono servicio={s} iconClassName="h-3.5 w-3.5" />
                     </button>
                   ))}
                 </div>
@@ -429,18 +532,24 @@ export default function AdminPanel() {
                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="font-semibold text-slate-900">{r.lugar_nombre || `Lugar #${r.lugar_id}`}</p>
-                    <p className="text-sm text-slate-600">{r.fecha_inicio} → {r.fecha_fin}</p>
-                    <p className="text-xs text-slate-500">Solicitante: {r.usuario_nombre || r.usuario_id}</p>
+                    <p className="mt-1 flex items-center gap-1 text-sm text-slate-600"><CalendarDays className="h-4 w-4" /> {r.fecha_inicio} → {r.fecha_fin}</p>
+                    <p className="mt-1 text-sm text-slate-600">Solicitante: {r.usuario_nombre || r.usuario_id}{r.usuario_email ? ` · ${r.usuario_email}` : ''}</p>
+                    <p className="text-sm text-slate-600">Club: {r.club_nombre || 'Sin club asociado'}</p>
+                    <p className="mt-1 text-sm text-slate-700">Motivo: {r.proposito || 'No indicado'}</p>
+                    {r.estado === 'pendiente' && r.expires_at && <p className="mt-1 text-xs font-medium text-amber-800">Esperando confirmación del líder hasta {new Date(r.expires_at).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' })}</p>}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize">{r.estado}</span>
-                    <button onClick={() => actualizarEstadoReserva(r.id, 'confirmada')} className="rounded-full bg-green-100 p-2 text-green-700 hover:bg-green-200"><CheckCircle className="h-4 w-4" /></button>
-                    <button onClick={() => actualizarEstadoReserva(r.id, 'cancelada')} className="rounded-full bg-red-100 p-2 text-red-700 hover:bg-red-200"><XCircle className="h-4 w-4" /></button>
-                    <button aria-label="Marcar completada" onClick={() => actualizarEstadoReserva(r.id, 'completada')} className="rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200"><CheckCircle className="h-4 w-4" /></button>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${r.estado === 'confirmada' ? 'bg-emerald-100 text-emerald-800' : r.estado === 'pendiente' ? 'bg-amber-100 text-amber-800' : r.estado === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>{r.estado}</span>
+                    {r.estado === 'pendiente' && <button type="button" aria-label={`Cancelar solicitud ${r.id}`} title="Cancelar solicitud" onClick={() => actualizarEstadoReserva(r.id, 'cancelada')} className="rounded-full bg-red-100 p-2 text-red-700 hover:bg-red-200"><XCircle className="h-4 w-4" /></button>}
+                    {r.estado === 'confirmada' && <>
+                      <button type="button" aria-label={`Marcar reserva ${r.id} completada`} title="Marcar completada" onClick={() => actualizarEstadoReserva(r.id, 'completada')} className="rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200"><CheckCircle className="h-4 w-4" /></button>
+                      <button type="button" aria-label={`Cancelar reserva ${r.id}`} title="Cancelar reserva" onClick={() => actualizarEstadoReserva(r.id, 'cancelada')} className="rounded-full bg-red-100 p-2 text-red-700 hover:bg-red-200"><XCircle className="h-4 w-4" /></button>
+                    </>}
                   </div>
                 </div>
               </div>
             ))}
+            {reservas.length === 0 && <p className="py-8 text-center text-sm text-slate-500">Todavía no hay solicitudes de reserva.</p>}
           </div>
         </div>
       )}

@@ -13,6 +13,7 @@ const validate = (req, res, next) => {
 };
 
 router.get('/mis', auth.verifyToken, reservaController.getMyReservas);
+router.post('/:id/confirmar-lugar', auth.verifyToken, param('id').isInt(), validate, reservaController.confirmarConLugar);
 router.get('/lugar/:id', param('id').isInt(), validate, reservaController.getReservasByLugar);
 
 router.get('/',
@@ -30,7 +31,7 @@ router.post('/',
   body('lugar_id').isInt(),
   body('fecha_inicio').isISO8601(),
   body('fecha_fin').isISO8601(),
-  body('proposito').optional().trim(),
+  body('proposito').trim().notEmpty().isLength({ max: 100 }),
   validate,
   reservaController.createReserva
 );
