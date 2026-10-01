@@ -1,5 +1,8 @@
 const pool = require('../config/database');
 const { calcularDistanciaKm } = require('../utils/geolocation');
+const CLIMA_CACHE_TTL_MS = 15 * 60 * 1000;
+const climaCache = new Map();
+
 const parseJsonArray = (value) => {
   if (!value) return [];
   if (Array.isArray(value)) return value;
@@ -194,6 +197,72 @@ exports.getLugarById = async (req, res) => {
   } catch (error) {
     console.error('Error obteniendo lugar:', error);
     res.status(500).json({ success: false, error: 'Error al obtener lugar' });
+  }
+};
+
+exports.getClimaLugar = async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, latitud, longitud, estado, creado_por FROM lugares_camping WHERE id = $1',
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ success: false, error: 'Lugar no encontrado' });
+
+    const lugar = result.rows[0];
+    if (lugar.estado !== 'activo' && !isAdmin(req) && Number(lugar.creado_por) !== Number(req.user?.id)) {
+      return res.status(403).json({ success: false, error: 'No tiene permisos para ver este lugar' });
+    }
+
+    const latitud = Number(lugar.latitud);
+    const longitud = Number(lugar.longitud);
+    if (!Number.isFinite(latitud) || !Number.isFinite(longitud)) {
+      return res.status(422).json({ success: false, error: 'Este lugar no tiene coordenadas válidas para consultar el clima' });
+    }
+
+    const cacheKey = `${latitud.toFixed(2)},${longitud.toFixed(2)}`;
+    const cached = climaCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return res.json({ success: true, source: 'Open-Meteo', cached: true, ...cached.data });
+    }
+
+    const url = new URL('https://api.open-meteo.com/v1/forecast');
+    url.search = new URLSearchParams({
+      latitude: String(latitud),
+      longitude: String(longitud),
+      current: 'temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m',
+      daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+      forecast_days: '3',
+      timezone: 'auto',
+    }).toString();
+
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error(`Open-Meteo respondió ${response.status}`);
+      const payload = await response.json();
+      if (!payload.current || !payload.daily) throw new Error('Respuesta de clima incompleta');
+
+      const data = {
+        timezone: payload.timezone,
+        current: payload.current,
+        current_units: payload.current_units,
+        daily: payload.daily,
+        daily_units: payload.daily_units,
+        updated_at: new Date().toISOString(),
+      };
+      climaCache.set(cacheKey, { data, expiresAt: Date.now() + CLIMA_CACHE_TTL_MS });
+      if (climaCache.size > 500) {
+        for (const [key, entry] of climaCache) {
+          if (entry.expiresAt <= Date.now() || climaCache.size > 500) climaCache.delete(key);
+        }
+      }
+      res.json({ success: true, source: 'Open-Meteo', cached: false, ...data });
+    } catch (error) {
+      if (cached) return res.json({ success: true, source: 'Open-Meteo', cached: true, stale: true, ...cached.data });
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error consultando clima del lugar:', error.message);
+    res.status(502).json({ success: false, error: 'No se pudo consultar el clima ahora. Intenta de nuevo más tarde.' });
   }
 };
 

@@ -4,6 +4,7 @@ const lugarService = {
   getAll: (params = {}) => api.get('/lugares', { params }),
   getMisLugares: () => api.get('/lugares/mis'),
   getById: (id) => api.get(`/lugares/${id}`),
+  getClima: (id) => api.get(`/lugares/${id}/clima`),
   create: (data) => api.post('/lugares', data),
   update: (id, data) => api.put(`/lugares/${id}`, data),
   delete: (id) => api.delete(`/lugares/${id}`),

@@ -54,11 +54,14 @@ exports.getMyReservas = async (req, res) => {
     const result = await pool.query(`
             SELECT r.*, l.nombre AS lugar_nombre, l.telefono AS lugar_telefono,
               l.contacto AS lugar_contacto, l.propietario AS lugar_propietario, c.nombre AS club_nombre,
+              COALESCE(club_church.nombre, user_church.nombre) AS iglesia_nombre,
               u.nombre AS usuario_nombre, u.email AS usuario_email
       FROM reservas r
       LEFT JOIN lugares_camping l ON r.lugar_id = l.id
       LEFT JOIN clubs c ON r.club_id = c.id
             LEFT JOIN usuarios u ON r.usuario_id = u.id
+        LEFT JOIN iglesias club_church ON club_church.id = c.iglesia_id
+        LEFT JOIN iglesias user_church ON user_church.id = u.iglesia_id
       WHERE r.usuario_id = $1
          OR (
            $2::text = 'director'

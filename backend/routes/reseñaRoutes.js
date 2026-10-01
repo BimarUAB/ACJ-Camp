@@ -19,7 +19,7 @@ router.post('/',
   body('lugar_id').isInt(),
   body('calificacion').isInt({ min: 1, max: 5 }),
   body('comentario').optional().trim(),
-  body('reserva_id').isInt(),
+  body('reserva_id').optional().isInt(),
   body('fecha_visita').optional().isISO8601(),
   validate,
   reseñaController.createReseña

@@ -68,7 +68,7 @@ export default function Dashboard() {
     { to: '/buscar', title: 'Explorar campamentos', description: 'Encuentra lugares por zona, servicios y distancia.', icon: Compass },
     ...(isAuthenticated ? [{ to: '/mis-lugares', title: 'Mis lugares', description: 'Propón un nuevo destino o actualiza los tuyos.', icon: MapPin }] : []),
     { to: '/reservas', title: 'Mis reservas', description: 'Revisa tus solicitudes y próximas fechas.', icon: CalendarRange },
-    { to: '/buscar', title: 'Mapa interactivo', description: 'Descubre sitios registrados y puntos cercanos.', icon: MapPinned },
+    { to: '/mapa', title: 'Mapa interactivo', description: 'Descubre sitios registrados y puntos cercanos.', icon: MapPinned },
   ];
 
   if (loading) return <Loading message="Cargando dashboard..." />;
@@ -83,7 +83,7 @@ export default function Dashboard() {
             <p>Encuentra campamentos en Bolivia, explora el mapa y organiza tu próxima salida con tu club.</p>
             <div className="dashboard-hero__actions">
               <Link to="/buscar" className="dashboard-button-primary">Explorar campamentos <ArrowRight size={16} /></Link>
-              <Link to="/buscar" className="dashboard-button-secondary">Ver mapa</Link>
+              <Link to="/mapa" className="dashboard-button-secondary">Ver mapa</Link>
             </div>
           </div>
           <div className="dashboard-hero__visual">

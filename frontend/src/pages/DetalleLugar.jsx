@@ -19,6 +19,7 @@ import StarRating from '../components/StarRating';
 import ServicioIcono from '../components/ServicioIcono';
 import uploadService from '../services/uploadService';
 import clubService from '../services/clubService';
+import ClimaLugar from '../components/ClimaLugar';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -57,7 +58,6 @@ export default function DetalleLugar() {
   const [lugar, setLugar] = useState(null);
   const [reseñas, setReseñas] = useState([]);
   const [reservasLugar, setReservasLugar] = useState([]);
-  const [reservasReseñables, setReservasReseñables] = useState([]);
   const [clubesUsuario, setClubesUsuario] = useState([]);
   const [clubReservaId, setClubReservaId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -71,10 +71,9 @@ export default function DetalleLugar() {
   const [reservaSuccess, setReservaSuccess] = useState('');
 
   const [calificacion, setCalificacion] = useState(0);
-  const [reservaReseñaId, setReservaReseñaId] = useState('');
   const [fotosReseña, setFotosReseña] = useState([]);
   const [subiendoFotos, setSubiendoFotos] = useState(false);
-  const [comentario, setComentario] = useState('');
+  const [comentario, setComentario] = useState(null);
   const [reseñaError, setReseñaError] = useState('');
   const [reseñaSuccess, setReseñaSuccess] = useState('');
 
@@ -82,10 +81,9 @@ export default function DetalleLugar() {
     try {
       setLoading(true);
       setError('');
-      const [lugarRes, reseñasRes, misReservasRes, clubesRes] = await Promise.all([
+      const [lugarRes, reseñasRes, clubesRes] = await Promise.all([
         lugarService.getById(id),
         reseñaService.getAll({ lugar_id: id }),
-        isAuthenticated ? reservaService.getMisReservas() : Promise.resolve({ data: { reservas: [] } }),
         isAuthenticated ? clubService.getAll() : Promise.resolve({ data: { clubs: [] } })
       ]);
       setLugar(lugarRes.data?.lugar || lugarRes.data);
@@ -94,13 +92,6 @@ export default function DetalleLugar() {
       const clubes = clubesRes.data?.clubs || [];
       setClubesUsuario(clubes);
       setClubReservaId((actual) => actual || (clubes[0]?.id ? String(clubes[0].id) : ''));
-      const completadas = (misReservasRes.data?.reservas || []).filter((reserva) =>
-        Number(reserva.lugar_id) === Number(id) &&
-        reserva.estado === 'completada' &&
-        !listaReseñas.some((reseña) => Number(reseña.reserva_id) === Number(reserva.id))
-      );
-      setReservasReseñables(completadas);
-      setReservaReseñaId(completadas[0]?.id ? String(completadas[0].id) : '');
 
       const reservasRes = await reservaService.getByLugar(id);
       setReservasLugar(reservasRes.data?.reservas || []);
@@ -194,18 +185,21 @@ export default function DetalleLugar() {
     try {
       setReseñaError('');
       setReseñaSuccess('');
-      await reseñaService.create({
+      const miReseña = reseñas.find((reseña) => Number(reseña.usuario_id) === Number(user?.id));
+      const fotosAnteriores = normalizarFotos(miReseña?.fotos);
+      const calificacionFinal = calificacion || Number(miReseña?.calificacion);
+      const comentarioFinal = comentario ?? miReseña?.comentario ?? '';
+      const datosReseña = {
         lugar_id: Number(id),
-        reserva_id: Number(reservaReseñaId),
-        calificacion,
-        comentario,
-        fotos: fotosReseña
-      });
-      setReseñaSuccess('Reseña publicada exitosamente.');
+        calificacion: calificacionFinal,
+        comentario: comentarioFinal,
+        fotos: [...fotosAnteriores, ...fotosReseña]
+      };
+      await reseñaService.create(datosReseña);
+      setReseñaSuccess(miReseña ? 'Tu reseña fue actualizada.' : 'Tu reseña fue publicada.');
       setCalificacion(0);
-      setComentario('');
+      setComentario(null);
       setFotosReseña([]);
-      setReservaReseñaId('');
       const reseñasRes = await reseñaService.getAll({ lugar_id: id });
       setReseñas(obtenerListaReseñas(reseñasRes.data));
     } catch (err) {
@@ -217,6 +211,7 @@ export default function DetalleLugar() {
   if (error) return <div className="p-8"><ErrorMessage message={error} onRetry={cargar} /></div>;
   if (!lugar) return <div className="p-8 text-center text-slate-500">Lugar no encontrado.</div>;
   const fotosLugar = normalizarFotos(lugar.fotos);
+  const miReseña = reseñas.find((reseña) => Number(reseña.usuario_id) === Number(user?.id));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -232,13 +227,19 @@ export default function DetalleLugar() {
               <MapPin className="h-4 w-4" /> {lugar.direccion || 'Sin dirección'}
             </p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-sm font-semibold capitalize ${
-            lugar.estado === 'activo' ? 'bg-green-100 text-green-700' :
-            lugar.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-700' :
-            'bg-red-100 text-red-700'
-          }`}>
-            {lugar.estado}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <a href="#reservar" className="inline-flex items-center gap-2 rounded bg-adventista-azul px-4 py-2 text-sm font-semibold text-white hover:bg-adventista-azul/90">
+              <Calendar className="h-4 w-4" /> Reservar
+            </a>
+            <a href="#resenas" className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Reseñas ({lugar.total_resenas || 0})</a>
+            <span className={`rounded-full px-3 py-1 text-sm font-semibold capitalize ${
+              lugar.estado === 'activo' ? 'bg-green-100 text-green-700' :
+              lugar.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-700' :
+              'bg-red-100 text-red-700'
+            }`}>
+              {lugar.estado}
+            </span>
+          </div>
         </div>
 
         <section className="mt-6 border-y border-slate-200 py-5" aria-label="Fotos del campamento">
@@ -312,10 +313,11 @@ export default function DetalleLugar() {
             </MapContainer>
           </div>
         </div>
+        <ClimaLugar lugar={lugar} />
       </div>
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-2">
-        <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+        <div id="reservar" className="scroll-mt-24 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <h2 className="mb-4 flex items-center gap-2 text-xl font-semibold text-slate-900">
             <Calendar className="h-5 w-5 text-adventista-azul" /> Reservar este lugar
           </h2>
@@ -415,7 +417,7 @@ export default function DetalleLugar() {
           </div>
         </div>
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div id="resenas" className="scroll-mt-24 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <h2 className="mb-4 text-xl font-semibold text-slate-900">Reseñas</h2>
           {reseñas.length === 0 ? (
             <p className="text-slate-500">Aún no hay reseñas para este lugar.</p>
@@ -427,6 +429,10 @@ export default function DetalleLugar() {
                     <p className="font-semibold text-slate-900">{r.usuario_nombre}</p>
                     <StarRating rating={r.calificacion} size={14} />
                   </div>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Iglesia: {r.usuario_iglesia_nombre || 'Sin iglesia asociada'}
+                      {r.usuario_clubes?.length ? ` · Clubes: ${r.usuario_clubes.map((club) => `${club.nombre} (${club.iglesia_nombre || 'Iglesia sin asignar'})`).join(', ')}` : ' · Sin club asociado'}
+                    </p>
                   <p className="mt-1 text-sm text-slate-600">{r.comentario || 'Sin comentario'}</p>
                   {normalizarFotos(r.fotos).length > 0 && (
                     <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label={`Fotos de la reseña de ${r.usuario_nombre}`}>
@@ -443,27 +449,23 @@ export default function DetalleLugar() {
             </div>
           )}
 
-          {isAuthenticated && reservasReseñables.length > 0 && (
+          {isAuthenticated && (
             <form onSubmit={enviarReseña} className="mt-6 rounded-xl bg-slate-50 p-4">
-              <h3 className="mb-2 font-semibold text-slate-800">Escribir reseña</h3>
-              <label className="mb-3 block text-sm font-medium text-slate-700">
-                Visita completada
-                <select required value={reservaReseñaId} onChange={(event) => setReservaReseñaId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-normal">
-                  {reservasReseñables.map((reserva) => <option key={reserva.id} value={reserva.id}>{reserva.fecha_inicio} a {reserva.fecha_fin}</option>)}
-                </select>
-              </label>
+              <h3 className="mb-2 font-semibold text-slate-800">{miReseña ? 'Actualizar mi reseña' : 'Escribir reseña'}</h3>
+              {miReseña && <p className="mb-3 text-xs text-slate-600">Ya publicaste una reseña para este lugar. Puedes actualizarla.</p>}
               <div className="mb-3">
                 <label className="block text-sm font-medium text-slate-700">Calificación</label>
                 <div className="mt-1">
-                  <StarRating rating={calificacion} interactive onChange={setCalificacion} />
+                  <StarRating rating={calificacion || Number(miReseña?.calificacion) || 0} interactive onChange={setCalificacion} />
                 </div>
               </div>
               <textarea
-                value={comentario}
+                value={comentario ?? miReseña?.comentario ?? ''}
                 onChange={(e) => setComentario(e.target.value)}
                 placeholder="Comparte tu experiencia..."
                 className="w-full rounded-lg border border-slate-300 px-3 py-2"
                 rows={3}
+                maxLength={2000}
               />
               <label className="mt-3 block text-sm font-medium text-slate-700">
                 Fotos de la visita
@@ -482,21 +484,19 @@ export default function DetalleLugar() {
                   }
                 }} className="mt-1 block w-full text-sm" />
               </label>
-              {fotosReseña.length > 0 && <p className="mt-1 text-xs text-slate-600">{fotosReseña.length} foto(s) preparada(s)</p>}
+              {(fotosReseña.length > 0 || normalizarFotos(miReseña?.fotos).length > 0) && <p className="mt-1 text-xs text-slate-600">{normalizarFotos(miReseña?.fotos).length + fotosReseña.length} foto(s) en tu reseña</p>}
               {reseñaError && <p className="mt-2 text-sm text-red-600">{reseñaError}</p>}
               {reseñaSuccess && <p className="mt-2 text-sm text-green-600">{reseñaSuccess}</p>}
               <button
                 type="submit"
-                disabled={subiendoFotos || !reservaReseñaId || calificacion < 1}
+                disabled={subiendoFotos || (calificacion || Number(miReseña?.calificacion) || 0) < 1}
                 className="mt-3 w-full rounded-lg bg-adventista-dorado py-2 font-semibold text-slate-900 hover:bg-adventista-dorado/90"
               >
-                Publicar reseña
+                {miReseña ? 'Guardar cambios' : 'Publicar reseña'}
               </button>
             </form>
           )}
-          {isAuthenticated && reservasReseñables.length === 0 && (
-            <p className="mt-6 border-t border-slate-200 pt-4 text-sm text-slate-600">Las reseñas están disponibles después de completar una reserva en este lugar.</p>
-          )}
+          {!isAuthenticated && <p className="mt-6 border-t border-slate-200 pt-4 text-sm text-slate-600"><Link to="/login" className="text-adventista-azul underline">Inicia sesión</Link> para publicar una reseña.</p>}
         </div>
       </div>
     </div>

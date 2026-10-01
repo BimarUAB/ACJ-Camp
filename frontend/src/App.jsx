@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import ExplorarCampamentos from './pages/ExplorarCampamentos';
 import BuscarLugares from './pages/BuscarLugares';
 import DetalleLugar from './pages/DetalleLugar';
 import MisReservas from './pages/MisReservas';
@@ -29,7 +30,8 @@ function App() {
                 <MiPerfil />
               </ProtectedRoute>
             } />
-            <Route path="/buscar" element={<BuscarLugares />} />
+            <Route path="/buscar" element={<ExplorarCampamentos />} />
+            <Route path="/mapa" element={<BuscarLugares />} />
             <Route path="/lugar/:id" element={<DetalleLugar />} />
             <Route path="/mis-clubes" element={
               <ProtectedRoute requireDirector>

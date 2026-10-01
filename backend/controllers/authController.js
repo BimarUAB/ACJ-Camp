@@ -331,9 +331,23 @@ exports.getAllUsers = async (req, res) => {
     let query = `
       SELECT u.id, u.nombre, u.email, u.telefono, u.rol, u.iglesia_id, COALESCE(u.estado, 'activo') AS estado,
              u.created_at, u.ultimo_login,
-             i.nombre AS iglesia_nombre
+             i.nombre AS iglesia_nombre,
+             COALESCE(clubes_usuario.clubes, '[]'::jsonb) AS clubes
       FROM usuarios u
       LEFT JOIN iglesias i ON u.iglesia_id = i.id
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+          jsonb_build_object('id', asociados.id, 'nombre', asociados.nombre, 'iglesia_nombre', asociados.iglesia_nombre)
+          ORDER BY asociados.nombre
+        ) AS clubes
+        FROM (
+          SELECT DISTINCT c.id, c.nombre, iglesia.nombre AS iglesia_nombre
+          FROM clubs c
+          LEFT JOIN iglesias iglesia ON iglesia.id = c.iglesia_id
+          LEFT JOIN club_lideres cl ON cl.club_id = c.id
+          WHERE c.director_id = u.id OR cl.lider_id = u.id
+        ) asociados
+      ) clubes_usuario ON TRUE
       WHERE 1=1
     `;
 

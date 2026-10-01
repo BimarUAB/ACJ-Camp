@@ -32,10 +32,26 @@ exports.getAllReseñas = async (req, res) => {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const result = await pool.query(`
-      SELECT r.*, u.nombre AS usuario_nombre, l.nombre AS lugar_nombre
+      SELECT r.*, u.nombre AS usuario_nombre, l.nombre AS lugar_nombre,
+             iglesia.nombre AS usuario_iglesia_nombre,
+             COALESCE(clubes_usuario.clubes, '[]'::jsonb) AS usuario_clubes
       FROM resenas r
       LEFT JOIN usuarios u ON r.usuario_id = u.id
       LEFT JOIN lugares_camping l ON r.lugar_id = l.id
+      LEFT JOIN iglesias iglesia ON iglesia.id = u.iglesia_id
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+          jsonb_build_object('nombre', asociados.nombre, 'iglesia_nombre', asociados.iglesia_nombre)
+          ORDER BY asociados.nombre
+        ) AS clubes
+        FROM (
+          SELECT DISTINCT c.id, c.nombre, club_iglesia.nombre AS iglesia_nombre
+          FROM clubs c
+          LEFT JOIN iglesias club_iglesia ON club_iglesia.id = c.iglesia_id
+          LEFT JOIN club_lideres cl ON cl.club_id = c.id
+          WHERE c.director_id = u.id OR cl.lider_id = u.id
+        ) asociados
+      ) clubes_usuario ON TRUE
       ${whereClause}
       ORDER BY r.created_at DESC
     `, params);
@@ -51,8 +67,8 @@ exports.createReseña = async (req, res) => {
   try {
     const { lugar_id, reserva_id, calificacion, comentario, fotos, fecha_visita } = req.body;
 
-    if (!lugar_id || !reserva_id || calificacion == null) {
-      return res.status(400).json({ success: false, error: 'Lugar, reserva completada y calificación son obligatorios' });
+    if (!lugar_id || calificacion == null) {
+      return res.status(400).json({ success: false, error: 'Lugar y calificación son obligatorios' });
     }
 
     if (calificacion < 1 || calificacion > 5) {
@@ -64,27 +80,36 @@ exports.createReseña = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Lugar no encontrado' });
     }
 
-    const reservaResult = await pool.query(
-      'SELECT id FROM reservas WHERE id = $1 AND lugar_id = $2 AND usuario_id = $3 AND estado = \'completada\'',
-      [reserva_id, lugar_id, req.user.id]
-    );
-    if (reservaResult.rows.length === 0) {
-      return res.status(400).json({ success: false, error: 'Solo se pueden reseñar reservas completadas propias de este lugar' });
+    if (reserva_id != null) {
+      const reservaResult = await pool.query(
+        'SELECT id FROM reservas WHERE id = $1 AND lugar_id = $2 AND usuario_id = $3 AND estado = \'completada\'',
+        [reserva_id, lugar_id, req.user.id]
+      );
+      if (reservaResult.rows.length === 0) {
+        return res.status(400).json({ success: false, error: 'La reserva debe estar completada y pertenecer a tu cuenta y a este lugar' });
+      }
     }
 
     const fotosArray = parseJsonArray(fotos);
 
     const result = await pool.query(
       `INSERT INTO resenas (lugar_id, usuario_id, reserva_id, calificacion, comentario, fotos, fecha_visita)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+       ON CONFLICT (usuario_id, lugar_id) DO UPDATE
+       SET reserva_id = COALESCE(EXCLUDED.reserva_id, resenas.reserva_id),
+           calificacion = EXCLUDED.calificacion,
+           comentario = EXCLUDED.comentario,
+           fotos = EXCLUDED.fotos,
+           fecha_visita = COALESCE(EXCLUDED.fecha_visita, resenas.fecha_visita),
+           created_at = CURRENT_TIMESTAMP
        RETURNING *`,
-      [lugar_id, req.user.id, reserva_id || null, calificacion, comentario, JSON.stringify(fotosArray), fecha_visita || null]
+      [lugar_id, req.user.id, reserva_id || null, calificacion, comentario || null, JSON.stringify(fotosArray), fecha_visita || null]
     );
 
-    res.status(201).json({ success: true, message: 'Reseña creada exitosamente', reseña: result.rows[0] });
+    res.status(201).json({ success: true, message: 'Reseña guardada exitosamente', reseña: result.rows[0] });
   } catch (error) {
     if (error.code === '23505') {
-      return res.status(409).json({ success: false, error: 'Esta reserva ya tiene una reseña' });
+      return res.status(409).json({ success: false, error: 'Ya existe una reseña asociada a esa reserva' });
     }
     console.error('Error creando reseña:', error);
     res.status(500).json({ success: false, error: 'Error al crear reseña' });

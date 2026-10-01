@@ -850,6 +850,10 @@ export default function AdminPanel() {
                 <div>
                   <p className="font-semibold text-slate-900">{u.nombre}</p>
                   <p className="text-sm text-slate-600">{u.email}</p>
+                  <p className="mt-1 text-xs text-slate-600">Iglesia: {u.iglesia_nombre || 'Sin iglesia asignada'}</p>
+                  {u.clubes?.length > 0 ? (
+                    <p className="mt-0.5 text-xs text-slate-600">Clubes: {u.clubes.map((club) => `${club.nombre} (${club.iglesia_nombre || 'Iglesia sin asignar'})`).join(' · ')}</p>
+                  ) : ['director', 'lider'].includes(u.rol) && <p className="mt-0.5 text-xs text-slate-500">Clubes: Sin asociaciones registradas</p>}
                   <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${u.estado === 'activo' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                     {u.estado}
                   </span>

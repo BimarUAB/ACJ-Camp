@@ -105,7 +105,7 @@ CREATE TABLE resenas (
     id SERIAL PRIMARY KEY,
     lugar_id INTEGER REFERENCES lugares_camping(id) ON DELETE CASCADE,
     usuario_id INTEGER REFERENCES usuarios(id),
-    reserva_id INTEGER NOT NULL UNIQUE REFERENCES reservas(id),
+    reserva_id INTEGER UNIQUE REFERENCES reservas(id),
     calificacion INTEGER NOT NULL CHECK (calificacion >= 1 AND calificacion <= 5),
     comentario TEXT,
     fotos JSONB DEFAULT '[]',
@@ -123,8 +123,8 @@ CREATE INDEX idx_lugares_ubicacion_gist ON lugares_camping USING GIST (
 CREATE INDEX idx_reservas_fechas ON reservas(fecha_inicio, fecha_fin);
 CREATE INDEX idx_resenas_lugar_id ON resenas(lugar_id);
 CREATE INDEX idx_resenas_usuario_id ON resenas(usuario_id);
+CREATE UNIQUE INDEX idx_resenas_usuario_lugar_unique ON resenas (usuario_id, lugar_id);
 
--- Datos de ejemplo: Iglesias en Bolivia
 INSERT INTO iglesias (nombre, direccion, zona, distrito, union_adventista, latitud, longitud) VALUES
 ('Iglesia Adventista Central de Cochabamba', 'Av. América, Cochabamba', 'Central', 'Cochabamba', 'Unión Boliviana', -17.3895, -66.1568),
 ('Iglesia Adventista de La Paz', 'Calle 21 de Calacoto, La Paz', 'Sur', 'La Paz', 'Unión Boliviana', -16.5384, -68.0897),

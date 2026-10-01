@@ -22,6 +22,12 @@ router.get('/',
 );
 router.get('/pendientes', auth.verifyToken, auth.requireAdmin, lugarController.getLugaresPendientes);
 router.get('/mis', auth.verifyToken, lugarController.getMisLugares);
+router.get('/:id/clima',
+  auth.optionalVerifyToken,
+  param('id').isInt(),
+  validate,
+  lugarController.getClimaLugar
+);
 router.get('/:id', auth.optionalVerifyToken, param('id').isInt(), validate, lugarController.getLugarById);
 
 router.post('/',

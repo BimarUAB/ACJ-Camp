@@ -7,6 +7,11 @@ import clubService from '../services/clubService';
 export default function MiPerfil() {
   const { user, updateUser } = useAuth();
   const isLeader = user?.rol === 'lider';
+  const clubesPerfil = user?.clubs?.length
+    ? user.clubs
+    : user?.club_nombre
+      ? [{ nombre: user.club_nombre, iglesia_nombre: user.iglesia_nombre }]
+      : [];
   const [form, setForm] = useState({
     nombre: user?.nombre || '',
     telefono: user?.telefono || '',
@@ -93,7 +98,8 @@ export default function MiPerfil() {
             <h1 className="text-2xl font-semibold text-slate-900">Mi perfil</h1>
           </div>
         </div>
-        <p className="mt-3 text-sm text-slate-600">{user?.email} · <span className="capitalize">{user?.rol}</span>{user?.iglesia_nombre ? ` · ${user.iglesia_nombre}` : ''}</p>
+        <p className="mt-3 text-sm text-slate-600">{user?.email} · <span className="capitalize">{user?.rol}</span>{user?.iglesia_nombre ? ` · Iglesia: ${user.iglesia_nombre}` : ''}</p>
+        {clubesPerfil.length > 0 && <p className="mt-1 text-sm text-slate-600">Clubes: {clubesPerfil.map((club) => `${club.nombre}${club.iglesia_nombre ? ` · ${club.iglesia_nombre}` : ''}`).join(' / ')}</p>}
       </header>
 
       {error && <p role="alert" className="mb-4 border-l-4 border-red-600 bg-red-50 p-3 text-sm text-red-800">{error}</p>}

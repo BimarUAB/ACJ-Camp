@@ -119,6 +119,7 @@ export default function MisReservas() {
                   </p>
                   <p className="mt-1 text-sm text-slate-600">Solicitante: {reserva.usuario_nombre || user?.nombre}</p>
                   <p className="mt-1 text-sm text-slate-600">Club: {reserva.club_nombre || 'Sin club asociado'}</p>
+                  <p className="mt-1 text-sm text-slate-600">Iglesia: {reserva.iglesia_nombre || 'Sin iglesia asociada'}</p>
                   <p className="mt-1 text-sm text-slate-600">Referencia del lugar: #{reserva.lugar_id}</p>
                   {reserva.lugar_telefono && (
                     <a href={`tel:${reserva.lugar_telefono}`} className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-adventista-azul hover:underline">
