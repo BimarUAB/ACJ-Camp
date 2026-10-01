@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Swal from 'sweetalert2';
-import { Building2, Users, MapPin, CalendarDays, BarChart3, CheckCircle, XCircle, ShieldCheck, Download, Trash2 } from 'lucide-react';
+import { Building2, Users, UserPlus, UserMinus, MapPin, CalendarDays, BarChart3, CheckCircle, XCircle, ShieldCheck, Download, Trash2 } from 'lucide-react';
 import lugarService from '../services/lugarService';
 import reservaService from '../services/reservaService';
 import authService from '../services/authService';
@@ -9,10 +9,13 @@ import reportService from '../services/reportService';
 import uploadService from '../services/uploadService';
 import clubService from '../services/clubService';
 import iglesiaService from '../services/iglesiaService';
+import mapaService from '../services/mapaService';
 import { useAuth } from '../context/AuthContext';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
 import ServicioIcono from '../components/ServicioIcono';
+
+const AdminStatsCharts = lazy(() => import('../components/AdminStatsCharts.jsx'));
 
 const TABS = [
   { id: 'stats', label: 'Estadísticas', icon: BarChart3 },
@@ -23,6 +26,12 @@ const TABS = [
 ];
 
 const SERVICIOS_OPCIONES = ['agua', 'baños', 'electricidad', 'fogata', 'senderos', 'rio', 'carpa', 'cocina', 'estacionamiento'];
+const FILTROS_ROL_USUARIO = [
+  { id: 'todos', label: 'Todos' },
+  { id: 'admin', label: 'Administradores' },
+  { id: 'director', label: 'Directores' },
+  { id: 'lider', label: 'Líderes' },
+];
 
 const fechaLocalActual = () => {
   const date = new Date();
@@ -52,7 +61,13 @@ export default function AdminPanel() {
   const [lugaresPopulares, setLugaresPopulares] = useState([]);
   const [iglesias, setIglesias] = useState([]);
   const [directorioIglesias, setDirectorioIglesias] = useState([]);
+  const [candidatasIglesiaOsm, setCandidatasIglesiaOsm] = useState([]);
+  const [iglesiasOsmSeleccionadas, setIglesiasOsmSeleccionadas] = useState(() => new Set());
+  const [buscandoIglesiasOsm, setBuscandoIglesiasOsm] = useState(false);
+  const [guardandoIglesiasOsm, setGuardandoIglesiasOsm] = useState(false);
+  const [errorIglesiasOsm, setErrorIglesiasOsm] = useState('');
   const [busquedaUsuario, setBusquedaUsuario] = useState('');
+  const [filtroRolUsuario, setFiltroRolUsuario] = useState('todos');
   const [busquedaReserva, setBusquedaReserva] = useState('');
   const [filtroEstadoReserva, setFiltroEstadoReserva] = useState('todos');
   const [filtroIglesiaReserva, setFiltroIglesiaReserva] = useState('todas');
@@ -60,6 +75,9 @@ export default function AdminPanel() {
   const [filtroPeriodoReserva, setFiltroPeriodoReserva] = useState('todos');
   const [usuarioEditando, setUsuarioEditando] = useState(null);
   const [formUsuario, setFormUsuario] = useState({ nombre: '', email: '', telefono: '', iglesia_id: '' });
+  const [clubesLideresAbiertos, setClubesLideresAbiertos] = useState(() => new Set());
+  const [lideresDisponiblesAdmin, setLideresDisponiblesAdmin] = useState({});
+  const [liderAdminSeleccionado, setLiderAdminSeleccionado] = useState({});
 
   const [formLugar, setFormLugar] = useState({
     nombre: '',
@@ -280,6 +298,56 @@ export default function AdminPanel() {
     }
   };
 
+  const buscarIglesiasAdventistas = async () => {
+    try {
+      setBuscandoIglesiasOsm(true);
+      setErrorIglesiasOsm('');
+      setCandidatasIglesiaOsm([]);
+      setIglesiasOsmSeleccionadas(new Set());
+      const { data } = await mapaService.getAdventistChurches();
+      const candidates = data.candidates || [];
+      setCandidatasIglesiaOsm(candidates);
+      setIglesiasOsmSeleccionadas(new Set(candidates.filter((church) => !church.duplicate).map((church) => church.id)));
+    } catch (err) {
+      setErrorIglesiasOsm(err.response?.data?.error || 'No se pudo consultar OpenStreetMap.');
+    } finally {
+      setBuscandoIglesiasOsm(false);
+    }
+  };
+
+  const importarIglesiasAdventistas = async () => {
+    const osmIds = [...iglesiasOsmSeleccionadas];
+    if (!osmIds.length) return;
+    const confirmation = await Swal.fire({
+      title: `¿Guardar ${osmIds.length} iglesia(s) de La Paz?`,
+      text: 'Se agregarán a la capa de iglesias, no a los lugares de campamento. Las ya registradas se omitirán.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Guardar iglesias',
+      cancelButtonText: 'Revisar'
+    });
+    if (!confirmation.isConfirmed) return;
+
+    try {
+      setGuardandoIglesiasOsm(true);
+      setErrorIglesiasOsm('');
+      const { data } = await mapaService.importAdventistChurches(osmIds);
+      setCandidatasIglesiaOsm([]);
+      setIglesiasOsmSeleccionadas(new Set());
+      await cargarTodo();
+      await Swal.fire({
+        title: 'Iglesias guardadas',
+        text: `${data.count} agregada(s)${data.skipped ? ` · ${data.skipped} ya existente(s)` : ''}. Quedaron registradas por ${currentUser?.nombre || 'el administrador'}.`,
+        icon: 'success',
+        confirmButtonText: 'Entendido'
+      });
+    } catch (err) {
+      setErrorIglesiasOsm(err.response?.data?.error || 'No se pudieron guardar las iglesias seleccionadas.');
+    } finally {
+      setGuardandoIglesiasOsm(false);
+    }
+  };
+
   const eliminarClub = async (club) => {
     const confirmation = await Swal.fire({
       title: `¿Eliminar ${club.nombre}?`,
@@ -299,6 +367,77 @@ export default function AdminPanel() {
     }
   };
 
+  const cambiarDirectorClub = async (club, directorId) => {
+    const confirmation = await Swal.fire({
+      title: directorId ? `¿Cambiar el director de ${club.nombre}?` : `¿Retirar el director de ${club.nombre}?`,
+      text: 'La asociación del club se actualizará; la cuenta del usuario y su historial se conservarán.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: directorId ? 'Cambiar director' : 'Retirar director',
+      cancelButtonText: 'Volver'
+    });
+    if (!confirmation.isConfirmed) return;
+    try {
+      await clubService.update(club.id, { director_id: directorId ? Number(directorId) : null });
+      await cargarTodo();
+      await Swal.fire({ title: 'Director actualizado', icon: 'success', confirmButtonText: 'Entendido' });
+    } catch (err) {
+      setError(err.response?.data?.error || 'No se pudo actualizar el director del club.');
+      await cargarTodo();
+    }
+  };
+
+  const alternarGestionLideresAdmin = async (clubId) => {
+    if (clubesLideresAbiertos.has(clubId)) {
+      setClubesLideresAbiertos((actuales) => {
+        const siguientes = new Set(actuales);
+        siguientes.delete(clubId);
+        return siguientes;
+      });
+      return;
+    }
+    try {
+      const { data } = await clubService.getLeaders(clubId);
+      setLideresDisponiblesAdmin((actuales) => ({ ...actuales, [clubId]: data.available || [] }));
+      setClubesLideresAbiertos((actuales) => new Set(actuales).add(clubId));
+    } catch (err) {
+      setError(err.response?.data?.error || 'No se pudieron cargar los líderes disponibles.');
+    }
+  };
+
+  const actualizarLiderClubAdmin = async (clubId, liderId, agregar, liderNombre = '') => {
+    if (!agregar) {
+      const confirmation = await Swal.fire({
+        title: `¿Retirar a ${liderNombre} del club?`,
+        text: 'La cuenta del líder y su historial se conservarán.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Retirar líder',
+        cancelButtonText: 'Volver'
+      });
+      if (!confirmation.isConfirmed) return;
+    }
+    try {
+      if (agregar) {
+        await clubService.addLeader(clubId, liderId);
+      } else {
+        await clubService.removeLeader(clubId, liderId);
+      }
+      await cargarTodo();
+      const { data } = await clubService.getLeaders(clubId);
+      setLideresDisponiblesAdmin((actuales) => ({ ...actuales, [clubId]: data.available || [] }));
+      setLiderAdminSeleccionado((actuales) => ({ ...actuales, [clubId]: '' }));
+      await Swal.fire({
+        title: agregar ? 'Líder asignado' : 'Líder retirado del club',
+        text: 'La cuenta y el historial del usuario se conservaron.',
+        icon: 'success',
+        confirmButtonText: 'Entendido'
+      });
+    } catch (err) {
+      setError(err.response?.data?.error || `No se pudo ${agregar ? 'asignar' : 'retirar'} el líder.`);
+    }
+  };
+
   const hoy = fechaLocalActual();
   const directorioClubes = directorioIglesias.flatMap((iglesia) =>
     iglesia.clubs.map((club) => ({ ...club, iglesia_nombre: iglesia.nombre, iglesia_id: iglesia.id }))
@@ -312,6 +451,10 @@ export default function AdminPanel() {
       && texto.includes(busquedaReserva.trim().toLocaleLowerCase('es'));
   });
   const contarEstadoReserva = (estado) => reservas.filter((reserva) => reserva.estado === estado).length;
+  const usuariosFiltrados = usuarios.filter((usuario) => (
+    (filtroRolUsuario === 'todos' || usuario.rol === filtroRolUsuario)
+    && `${usuario.nombre} ${usuario.email}`.toLowerCase().includes(busquedaUsuario.toLowerCase())
+  ));
 
   if (loading) return <Loading message="Cargando panel..." />;
 
@@ -359,52 +502,56 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <h2 className="mb-4 font-semibold text-slate-800">Reservas por mes</h2>
-            {reporteMes.length > 0 ? (
-              <div className="space-y-2">
-                {reporteMes.map((r) => (
-                  <div key={r.mes} className="flex items-center justify-between rounded-lg bg-slate-50 p-3">
-                    <span className="font-medium">{r.mes}</span>
-                    <span className="rounded-full bg-adventista-azul px-3 py-1 text-sm font-semibold text-white">{r.total}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-slate-500">No hay datos suficientes.</p>
-            )}
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-              <h2 className="mb-4 font-semibold text-slate-800">Reservas por zona</h2>
-              <div className="divide-y divide-slate-100">
-                {reporteZona.map((fila, index) => (
-                  <div key={`${fila.zona || 'sin-zona'}-${index}`} className="flex justify-between py-2 text-sm">
-                    <span>{fila.zona || 'Sin zona registrada'}</span><strong>{fila.total_reservas}</strong>
-                  </div>
-                ))}
-                {reporteZona.length === 0 && <p className="text-sm text-slate-500">No hay datos.</p>}
-              </div>
-            </section>
-            <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-              <h2 className="mb-4 font-semibold text-slate-800">Lugares más populares</h2>
-              <div className="divide-y divide-slate-100">
-                {lugaresPopulares.map((lugar) => (
-                  <div key={lugar.id} className="flex items-center justify-between gap-4 py-2 text-sm">
-                    <span className="truncate">{lugar.nombre}</span>
-                    <span className="shrink-0 text-slate-600">{lugar.total_reservas} reservas · {Number(lugar.promedio_calificacion).toFixed(1)} ★</span>
-                  </div>
-                ))}
-                {lugaresPopulares.length === 0 && <p className="text-sm text-slate-500">No hay datos.</p>}
-              </div>
-            </section>
-          </div>
+          <Suspense fallback={<Loading message="Cargando gráficas..." />}>
+            <AdminStatsCharts reporteMes={reporteMes} reporteZona={reporteZona} lugaresPopulares={lugaresPopulares} />
+          </Suspense>
         </div>
       )}
 
       {tab === 'iglesias' && (
         <section className="space-y-4" aria-label="Directorio de iglesias y clubes">
+          <section className="rounded-xl border border-slate-200 bg-white p-5" aria-label="Importar iglesias adventistas">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-slate-900">Iglesias adventistas de La Paz</h2>
+                <p className="mt-1 text-sm text-slate-600">Busca en OpenStreetMap y revisa las coincidencias antes de guardarlas.</p>
+              </div>
+              <button type="button" disabled={buscandoIglesiasOsm || guardandoIglesiasOsm} onClick={buscarIglesiasAdventistas} className="inline-flex items-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                <MapPin className="h-4 w-4" /> {buscandoIglesiasOsm ? 'Buscando…' : 'Buscar en OpenStreetMap'}
+              </button>
+            </div>
+            {errorIglesiasOsm && <p role="alert" className="mt-3 border-l-4 border-red-600 bg-red-50 p-3 text-sm text-red-800">{errorIglesiasOsm}</p>}
+            {candidatasIglesiaOsm.length > 0 && (
+              <div className="mt-4 border-t border-slate-200 pt-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-slate-600">{iglesiasOsmSeleccionadas.size} de {candidatasIglesiaOsm.length} seleccionadas</p>
+                  <button type="button" disabled={guardandoIglesiasOsm || !iglesiasOsmSeleccionadas.size} onClick={importarIglesiasAdventistas} className="inline-flex items-center gap-2 rounded bg-adventista-azul px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                    <Download className="h-4 w-4" /> {guardandoIglesiasOsm ? 'Guardando…' : `Guardar seleccionadas (${iglesiasOsmSeleccionadas.size})`}
+                  </button>
+                </div>
+                <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto border-y border-slate-100">
+                  {candidatasIglesiaOsm.map((church) => (
+                    <label key={church.id} className={`flex items-start gap-3 py-3 ${church.duplicate ? 'opacity-60' : 'cursor-pointer'}`}>
+                      <input type="checkbox" disabled={church.duplicate || guardandoIglesiasOsm} checked={church.duplicate || iglesiasOsmSeleccionadas.has(church.id)} onChange={() => setIglesiasOsmSeleccionadas((actuales) => {
+                        const siguientes = new Set(actuales);
+                        if (siguientes.has(church.id)) siguientes.delete(church.id);
+                        else siguientes.add(church.id);
+                        return siguientes;
+                      })} className="mt-1" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-slate-800">{church.nombre}</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">{[church.direccion, church.zona].filter(Boolean).join(' · ') || 'Dirección no disponible'}</span>
+                        {church.duplicate && <span className="mt-1 block text-xs font-medium text-amber-800">Ya existe una iglesia con el mismo nombre o ubicación.</span>}
+                      </span>
+                      <a href={church.osm_url} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-medium text-adventista-azul hover:underline">Ver en OSM</a>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-slate-500">Datos de OpenStreetMap · © colaboradores de OpenStreetMap</p>
+              </div>
+            )}
+            {!buscandoIglesiasOsm && !errorIglesiasOsm && candidatasIglesiaOsm.length === 0 && <p className="mt-3 text-xs text-slate-500">La búsqueda no cambia nada hasta que revises y confirmes la importación.</p>}
+          </section>
           {directorioIglesias.map((iglesia) => (
             <article key={iglesia.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
               <header className="flex items-start gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
@@ -412,6 +559,7 @@ export default function AdminPanel() {
                 <div className="min-w-0">
                   <h2 className="font-semibold text-slate-900">{iglesia.nombre}</h2>
                   {(iglesia.direccion || iglesia.zona || iglesia.distrito) && <p className="mt-1 text-sm text-slate-600">{[iglesia.direccion, iglesia.zona, iglesia.distrito].filter(Boolean).join(' · ')}</p>}
+                  {iglesia.creado_por_nombre && <p className="mt-1 text-xs text-slate-500">Registrada por: {iglesia.creado_por_nombre}</p>}
                 </div>
                 <span className="ml-auto shrink-0 text-xs text-slate-500">{iglesia.clubs.length} {iglesia.clubs.length === 1 ? 'club' : 'clubes'}</span>
                 <button type="button" onClick={() => eliminarIglesia(iglesia)} title={`Eliminar iglesia ${iglesia.nombre}`} aria-label={`Eliminar iglesia ${iglesia.nombre}`} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-300 text-slate-500 hover:border-red-300 hover:text-red-700">
@@ -424,11 +572,33 @@ export default function AdminPanel() {
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <div>
                         <h3 className="font-medium text-slate-900">{club.nombre}</h3>
-                        <p className="mt-0.5 text-xs capitalize text-slate-500">{club.tipo}{club.director_nombre ? ` · Director: ${club.director_nombre}` : ''}</p>
+                        <p className="mt-0.5 text-xs capitalize text-slate-500">{club.tipo}</p>
+                        <p className="mt-1 text-xs text-slate-600">Director: {club.director_nombre || 'Sin asignar'}{club.director_email ? ` · ${club.director_email}` : ''}</p>
+                        {club.director_telefono && <p className="mt-0.5 text-xs text-slate-500">{club.director_telefono}</p>}
+                        {club.director_estado === 'inactivo' && <span className="mt-1 inline-block text-xs font-medium text-red-700">Cuenta del director inactiva</span>}
                       </div>
                       <span className="text-xs text-slate-500">{club.lideres.length} {club.lideres.length === 1 ? 'líder' : 'líderes'}</span>
                       <button type="button" onClick={() => eliminarClub(club)} title={`Eliminar club ${club.nombre}`} aria-label={`Eliminar club ${club.nombre}`} className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-300 text-slate-500 hover:border-red-300 hover:text-red-700">
                         <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                      <label className="block text-xs font-medium text-slate-600">
+                        Administrar director
+                        <select
+                          value={club.director_id || ''}
+                          onChange={(event) => cambiarDirectorClub(club, event.target.value)}
+                          aria-label={`Asignar director a ${club.nombre}`}
+                          className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                        >
+                          <option value="">Sin director asignado</option>
+                          {usuarios.filter((usuario) => usuario.rol === 'director' && (usuario.estado === 'activo' || Number(usuario.id) === Number(club.director_id)) && (Number(usuario.iglesia_id) === Number(iglesia.id) || Number(usuario.id) === Number(club.director_id))).map((director) => (
+                            <option key={director.id} value={director.id}>{director.nombre}{director.estado !== 'activo' ? ' · Inactivo' : ''}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button type="button" onClick={() => alternarGestionLideresAdmin(club.id)} className="inline-flex items-center justify-center gap-2 rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                        <Users className="h-4 w-4" /> {clubesLideresAbiertos.has(club.id) ? 'Cerrar líderes' : 'Asignar líderes'}
                       </button>
                     </div>
                     {club.lideres.length > 0 ? (
@@ -436,15 +606,34 @@ export default function AdminPanel() {
                         {club.lideres.map((lider) => (
                           <li key={lider.id} className="flex min-w-0 items-start gap-2 rounded-lg bg-slate-50 px-3 py-2">
                             <Users className="mt-0.5 h-4 w-4 shrink-0 text-adventista-verde" />
-                            <span className="min-w-0">
+                            <span className="min-w-0 flex-1">
                               <strong className="block truncate text-sm font-medium text-slate-800">{lider.nombre}</strong>
                               <span className="block truncate text-xs text-slate-500">{lider.email}{lider.telefono ? ` · ${lider.telefono}` : ''}</span>
                               {lider.estado === 'inactivo' && <span className="text-xs font-medium text-red-700">Cuenta inactiva</span>}
                             </span>
+                            <button type="button" onClick={() => actualizarLiderClubAdmin(club.id, lider.id, false, lider.nombre)} title={`Retirar a ${lider.nombre} del club`} aria-label={`Retirar a ${lider.nombre} del club`} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-300 text-slate-500 hover:border-red-300 hover:text-red-700">
+                              <UserMinus className="h-4 w-4" />
+                            </button>
                           </li>
                         ))}
                       </ul>
                     ) : <p className="mt-3 text-sm text-slate-500">Este club todavía no tiene líderes asignados.</p>}
+                    {clubesLideresAbiertos.has(club.id) && (
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <select
+                          value={liderAdminSeleccionado[club.id] || ''}
+                          onChange={(event) => setLiderAdminSeleccionado((actuales) => ({ ...actuales, [club.id]: event.target.value }))}
+                          aria-label={`Seleccionar líder para ${club.nombre}`}
+                          className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-3 py-2 text-sm"
+                        >
+                          <option value="">Seleccionar líder activo de esta iglesia</option>
+                          {(lideresDisponiblesAdmin[club.id] || []).map((lider) => <option key={lider.id} value={lider.id}>{lider.nombre} · {lider.email}</option>)}
+                        </select>
+                        <button type="button" disabled={!liderAdminSeleccionado[club.id]} onClick={() => actualizarLiderClubAdmin(club.id, liderAdminSeleccionado[club.id], true)} className="inline-flex items-center justify-center gap-2 rounded bg-adventista-azul px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                          <UserPlus className="h-4 w-4" /> Asignar líder
+                        </button>
+                      </div>
+                    )}
                   </section>
                 ))}
                 {iglesia.clubs.length === 0 && <p className="py-4 text-sm text-slate-500">Esta iglesia todavía no tiene clubes registrados.</p>}
@@ -619,10 +808,29 @@ export default function AdminPanel() {
 
       {tab === 'usuarios' && (
         <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <h2 className="mb-4 font-semibold text-slate-800">Gestión de usuarios</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold text-slate-800">Gestión de usuarios</h2>
+            <span className="text-sm text-slate-500">{usuariosFiltrados.length} de {usuarios.length}</span>
+          </div>
           <input value={busquedaUsuario} onChange={(event) => setBusquedaUsuario(event.target.value)} placeholder="Buscar por nombre o correo" className="mb-4 w-full max-w-md rounded-lg border border-slate-300 px-3 py-2" />
+          <div className="mb-5 inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-slate-100 p-1" role="group" aria-label="Filtrar usuarios por rol">
+            {FILTROS_ROL_USUARIO.map(({ id, label }) => {
+              const total = id === 'todos' ? usuarios.length : usuarios.filter((usuario) => usuario.rol === id).length;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setFiltroRolUsuario(id)}
+                  aria-pressed={filtroRolUsuario === id}
+                  className={`rounded-md px-3 py-2 text-sm font-medium ${filtroRolUsuario === id ? 'bg-white text-adventista-azul shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  {label} <span className="ml-1 text-xs text-slate-500">{total}</span>
+                </button>
+              );
+            })}
+          </div>
           <div className="space-y-3">
-            {usuarios.filter((u) => `${u.nombre} ${u.email}`.toLowerCase().includes(busquedaUsuario.toLowerCase())).map((u) => (
+            {usuariosFiltrados.map((u) => (
               <div key={u.id} className="rounded-xl border border-slate-200 p-4">
                 {usuarioEditando === u.id ? (
                   <form onSubmit={guardarUsuario} className="grid gap-3 sm:grid-cols-2">
@@ -658,6 +866,7 @@ export default function AdminPanel() {
                 </div>}
               </div>
             ))}
+            {usuariosFiltrados.length === 0 && <p className="py-8 text-center text-sm text-slate-500">{usuarios.length === 0 ? 'No hay usuarios registrados.' : 'No hay usuarios que coincidan con este rol o búsqueda.'}</p>}
           </div>
         </div>
       )}
