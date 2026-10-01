@@ -67,10 +67,20 @@ exports.getAllClubs = async (req, res) => {
 exports.getChurchClubDirectory = async (req, res) => {
   try {
     const [churchesResult, clubsResult] = await Promise.all([
-      pool.query('SELECT id, nombre, direccion, zona, distrito FROM iglesias ORDER BY nombre'),
+      pool.query(
+        `SELECT iglesia.id, iglesia.nombre, iglesia.direccion, iglesia.zona, iglesia.distrito,
+                creador.nombre AS creado_por_nombre
+         FROM iglesias iglesia
+         LEFT JOIN usuarios creador ON creador.id = iglesia.creado_por
+         ORDER BY iglesia.nombre`
+      ),
       pool.query(
         `SELECT c.id, c.iglesia_id, c.nombre, c.tipo, c.logo_url,
-                director.nombre AS director_nombre,
+          director.id AS director_id,
+          director.nombre AS director_nombre,
+          director.email AS director_email,
+          director.telefono AS director_telefono,
+          COALESCE(director.estado, 'activo') AS director_estado,
                 COALESCE(
                   json_agg(json_build_object(
                     'id', lider.id,
@@ -85,7 +95,7 @@ exports.getChurchClubDirectory = async (req, res) => {
          LEFT JOIN usuarios director ON director.id = c.director_id
          LEFT JOIN club_lideres cl ON cl.club_id = c.id
          LEFT JOIN usuarios lider ON lider.id = cl.lider_id AND lider.rol = 'lider'
-         GROUP BY c.id, director.nombre
+         GROUP BY c.id, director.id
          ORDER BY c.nombre`
       )
     ]);
@@ -297,17 +307,46 @@ exports.updateClub = async (req, res) => {
       }
     }
 
-      const result = await pool.query(
-        `UPDATE clubs
-         SET nombre = COALESCE($1, nombre),
-           tipo = COALESCE($2, tipo),
-           iglesia_id = COALESCE($3, iglesia_id),
-           director_id = COALESCE($4, director_id),
-           logo_url = COALESCE($5, logo_url)
-         WHERE id = $6
-         RETURNING *`,
-        [nombre, tipo, isAdmin(req) ? iglesia_id : directorChurch.rows[0].iglesia_id,
-          isAdmin(req) ? director_id : req.user.id, logo_url, id]
+    const iglesiaDestino = isAdmin(req) ? (iglesia_id ?? access.club.iglesia_id) : directorChurch.rows[0].iglesia_id;
+    const cambiarDirector = !isAdmin(req) || director_id !== undefined;
+    let directorDestino = isAdmin(req) ? access.club.director_id : req.user.id;
+
+    if (isAdmin(req) && cambiarDirector) {
+      if (director_id == null || director_id === '') {
+        directorDestino = null;
+      } else {
+        const director = await pool.query(
+          `SELECT id FROM usuarios
+           WHERE id = $1 AND rol = 'director' AND iglesia_id = $2`,
+          [director_id, iglesiaDestino]
+        );
+        if (!director.rows.length) {
+          return res.status(400).json({ success: false, error: 'El director debe pertenecer a la iglesia del club' });
+        }
+        directorDestino = director.rows[0].id;
+      }
+    } else if (isAdmin(req) && directorDestino != null && iglesia_id != null) {
+      const director = await pool.query(
+        `SELECT id FROM usuarios
+         WHERE id = $1 AND rol = 'director' AND iglesia_id = $2`,
+        [directorDestino, iglesiaDestino]
+      );
+      if (!director.rows.length) {
+        return res.status(400).json({ success: false, error: 'Reasigna o quita el director antes de cambiar la iglesia del club' });
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE clubs
+       SET nombre = COALESCE($1, nombre),
+         tipo = COALESCE($2, tipo),
+         iglesia_id = COALESCE($3, iglesia_id),
+         director_id = CASE WHEN $4 THEN $5 ELSE director_id END,
+         logo_url = COALESCE($6, logo_url)
+       WHERE id = $7
+       RETURNING *`,
+      [nombre, tipo, isAdmin(req) ? iglesia_id : iglesiaDestino,
+        cambiarDirector, directorDestino, logo_url, id]
     );
 
     res.json({ success: true, message: 'Club actualizado exitosamente', club: result.rows[0] });

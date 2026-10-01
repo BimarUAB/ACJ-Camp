@@ -35,6 +35,11 @@ CREATE TABLE usuarios (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE iglesias
+    ADD COLUMN creado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+
+CREATE INDEX idx_iglesias_creado_por ON iglesias (creado_por);
+
 -- Tabla: CLUB
 CREATE TABLE clubs (
     id SERIAL PRIMARY KEY,

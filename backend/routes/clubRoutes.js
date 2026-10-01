@@ -49,6 +49,7 @@ router.put('/:id',
   body('nombre').optional().trim(),
   body('tipo').optional().isIn(['conquistadores', 'aventureros', 'ja']),
   body('iglesia_id').optional().isInt(),
+  body('director_id').optional({ values: 'null' }).isInt({ min: 1 }),
   validate,
   clubController.updateClub
 );
