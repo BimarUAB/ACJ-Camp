@@ -2,6 +2,7 @@ import api from './api';
 
 const lugarService = {
   getAll: (params = {}) => api.get('/lugares', { params }),
+  getNearby: (params) => api.get('/postgrest/lugares-cercanos', { params }),
   getMisLugares: () => api.get('/lugares/mis'),
   getById: (id) => api.get(`/lugares/${id}`),
   getClima: (id) => api.get(`/lugares/${id}/clima`),

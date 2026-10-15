@@ -202,7 +202,20 @@ export default function BuscarLugares() {
       if (capacidadMin) params.capacidad_min = capacidadMin;
       if (calificacionMin) params.calificacion_min = calificacionMin;
 
-      const { data } = await lugarService.getAll(params);
+      const tieneFiltrosAdicionales = Boolean(
+        params.busqueda || params.servicios || params.capacidad_min || params.calificacion_min
+      );
+      let respuesta;
+      if (tieneFiltrosAdicionales) {
+        respuesta = await lugarService.getAll(params);
+      } else {
+        try {
+          respuesta = await lugarService.getNearby({ lat: latitud, lng: longitud, radio: params.radio });
+        } catch {
+          respuesta = await lugarService.getAll(params);
+        }
+      }
+      const { data } = respuesta;
       setLugares(data?.lugares || []);
     } catch (err) {
       setError(err.response?.data?.error || 'Error al cargar lugares');

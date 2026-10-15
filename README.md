@@ -144,6 +144,7 @@ DB_PORT=5432
 DB_NAME=campusab
 DB_USER=postgres
 DB_PASSWORD=TU_PASSWORD
+POSTGREST_URL=http://127.0.0.1:3001
 
 PORT=5000
 FRONTEND_URL=http://localhost:3000
@@ -156,6 +157,36 @@ CLOUDINARY_API_SECRET=tu_api_secret
 ```
 
 En producción añade `NODE_ENV=production`, una `JWT_SECRET` aleatoria de al menos 32 caracteres, el origen del frontend en `FRONTEND_URL` y `TRUST_PROXY=true` si el backend está detrás de un proxy. Se admiten varios orígenes separados por comas.
+
+#### Piloto PostgREST (opcional)
+
+En Windows, el script `backend/start-postgrest.ps1` lee `PGRST_DB_PASSWORD` desde `backend/.env` y limita el servicio a `127.0.0.1:3001`. Para iniciarlo, ejecuta `npm run postgrest` desde `backend`; deja esa terminal abierta mientras uses el mapa.
+
+Para una instalación nueva, crea el login de PostgREST desde `psql`, concédele el rol anónimo y define su contraseña con `\password`:
+
+```sql
+CREATE ROLE campusab_postgrest_authenticator WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;
+GRANT campusab_postgrest_anon TO campusab_postgrest_authenticator;
+\password campusab_postgrest_authenticator
+```
+
+Guarda esa contraseña como `PGRST_DB_PASSWORD` en `backend/.env`; no uses la contraseña de `DB_USER`.
+
+Las operaciones de escritura y los filtros adicionales siguen usando Express y `pg`; la búsqueda simple por centro y radio del mapa usa PostgREST. Aplica esta migración sobre una base que ya tenga PostGIS:
+
+```bash
+psql -U postgres -d campusab -f database/migrate-postgrest-lugares-cercanos.sql
+```
+
+La migración crea el esquema `api`, una función de solo lectura que devuelve lugares activos y el rol limitado `campusab_postgrest_anon`. Configura PostgREST con `PGRST_DB_SCHEMAS=api`, `PGRST_DB_ANON_ROLE=campusab_postgrest_anon`, `PGRST_SERVER_PORT=3001` y una URI de conexión privada en `PGRST_DB_URI`. El usuario de esa conexión debe poder asumir el rol anónimo (`GRANT campusab_postgrest_anon TO <usuario_postgrest>`). No expongas el puerto de PostgREST a Internet.
+
+Con PostgREST activo y `POSTGREST_URL` configurado en `backend/.env`, prueba el proxy:
+
+```bash
+curl "http://localhost:5000/api/postgrest/lugares-cercanos?lat=-16.5&lng=-68.1&radio=50"
+```
+
+La ruta `GET /api/lugares` sigue disponible como fallback y para aplicar filtros complementarios.
 
 ### 5. Iniciar el proyecto
 

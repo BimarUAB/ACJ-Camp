@@ -17,6 +17,7 @@ const reseñaRoutes = require('./routes/reseñaRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const mapaRoutes = require('./routes/mapaRoutes');
+const postgrestRoutes = require('./routes/postgrestRoutes');
 const { expirePendingReservations } = require('./utils/reservationExpiry');
 
 const app = express();
@@ -56,6 +57,7 @@ app.use('/api/resenas', reseñaRoutes);
 app.use('/api/reportes', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/mapa', mapaRoutes);
+app.use('/api/postgrest', postgrestRoutes);
 
 app.get('/', (req, res) => {
   res.json({
