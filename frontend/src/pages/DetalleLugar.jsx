@@ -20,6 +20,7 @@ import ServicioIcono from '../components/ServicioIcono';
 import uploadService from '../services/uploadService';
 import clubService from '../services/clubService';
 import ClimaLugar from '../components/ClimaLugar';
+import ImageViewer from '../components/ImageViewer';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -62,6 +63,7 @@ export default function DetalleLugar() {
   const [clubReservaId, setClubReservaId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [imagenAbierta, setImagenAbierta] = useState(null);
 
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
@@ -211,10 +213,21 @@ export default function DetalleLugar() {
   if (error) return <div className="p-8"><ErrorMessage message={error} onRetry={cargar} /></div>;
   if (!lugar) return <div className="p-8 text-center text-slate-500">Lugar no encontrado.</div>;
   const fotosLugar = normalizarFotos(lugar.fotos);
+  const fotosGaleria = [
+    ...fotosLugar.map((src, index) => ({
+      src, autor: 'Foto del lugar', alt: `${lugar.nombre}, foto ${index + 1}`,
+    })),
+    ...reseñas.flatMap((reseña) => normalizarFotos(reseña.fotos).map((src, index) => ({
+      src,
+      autor: `Por ${reseña.usuario_nombre || 'Usuario'}`,
+      alt: `${lugar.nombre}, foto ${index + 1} de la reseña de ${reseña.usuario_nombre || 'Usuario'}`,
+    }))),
+  ].filter((foto, index, fotos) => fotos.findIndex((otra) => otra.src === foto.src) === index);
   const miReseña = reseñas.find((reseña) => Number(reseña.usuario_id) === Number(user?.id));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
+      {imagenAbierta && <ImageViewer src={imagenAbierta.src} alt={imagenAbierta.alt} onClose={() => setImagenAbierta(null)} />}
       <Link to="/buscar" className="mb-4 inline-flex items-center gap-1 text-sm text-adventista-azul hover:underline">
         <ChevronLeft className="h-4 w-4" /> Volver a lugares
       </Link>
@@ -245,14 +258,15 @@ export default function DetalleLugar() {
         <section className="mt-6 border-y border-slate-200 py-5" aria-label="Fotos del campamento">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="font-semibold text-slate-900">Fotos del campamento</h2>
-            {fotosLugar.length > 0 && <span className="text-xs text-slate-500">{fotosLugar.length} {fotosLugar.length === 1 ? 'foto' : 'fotos'}</span>}
+            {fotosGaleria.length > 0 && <span className="text-xs text-slate-500">{fotosGaleria.length} {fotosGaleria.length === 1 ? 'foto' : 'fotos'}</span>}
           </div>
-          {fotosLugar.length > 0 ? (
+          {fotosGaleria.length > 0 ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {fotosLugar.map((foto, index) => (
-                <a key={`${foto}-${index}`} href={foto} target="_blank" rel="noreferrer" className="group block overflow-hidden rounded-lg bg-slate-100">
-                  <img src={foto} alt={`${lugar.nombre}, foto ${index + 1}`} className="aspect-[4/3] w-full object-cover transition duration-200 group-hover:scale-[1.02]" loading="lazy" />
-                </a>
+              {fotosGaleria.map((foto, index) => (
+                <button type="button" key={foto.src} onClick={() => setImagenAbierta({ src: foto.src, alt: foto.alt })} aria-label={`Ampliar foto ${index + 1} de ${lugar.nombre}. ${foto.autor}`} className="group relative block overflow-hidden rounded-lg bg-slate-100">
+                  <img src={foto.src} alt={foto.alt} className="aspect-[4/3] w-full object-cover transition duration-200 group-hover:scale-[1.02]" loading="lazy" />
+                  <span className="absolute bottom-0 left-0 right-0 truncate bg-slate-950/80 px-3 py-2 text-left text-xs font-medium text-white">{foto.autor}</span>
+                </button>
               ))}
             </div>
           ) : (
@@ -437,9 +451,9 @@ export default function DetalleLugar() {
                   {normalizarFotos(r.fotos).length > 0 && (
                     <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label={`Fotos de la reseña de ${r.usuario_nombre}`}>
                       {normalizarFotos(r.fotos).map((foto, index) => (
-                        <a key={`${r.id}-${foto}`} href={foto} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-slate-200">
+                        <button type="button" key={`${r.id}-${foto}`} onClick={() => setImagenAbierta({ src: foto, alt: `Foto ${index + 1} de la reseña de ${r.usuario_nombre}` })} aria-label={`Ampliar foto ${index + 1} de la reseña de ${r.usuario_nombre}`} className="block overflow-hidden rounded-lg border border-slate-200">
                           <img src={foto} alt={`Foto ${index + 1} de la reseña de ${r.usuario_nombre}`} loading="lazy" className="aspect-[4/3] h-full w-full object-cover transition hover:scale-105" />
-                        </a>
+                        </button>
                       ))}
                     </div>
                   )}

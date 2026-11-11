@@ -20,6 +20,7 @@ router.get('/',
   validate,
   lugarController.getAllLugares
 );
+router.get('/galeria', lugarController.getGaleriaPublica);
 router.get('/pendientes', auth.verifyToken, auth.requireAdmin, lugarController.getLugaresPendientes);
 router.get('/mis', auth.verifyToken, lugarController.getMisLugares);
 router.get('/:id/clima',

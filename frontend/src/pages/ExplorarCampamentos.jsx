@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowRight, Compass, Map, MapPin, Search, Star, TentTree, Users } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ArrowRight, Map, MapPin, Search, Star, TentTree, Users } from 'lucide-react';
 import lugarService from '../services/lugarService';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
@@ -17,8 +17,10 @@ const normalizarFotos = (value) => {
 };
 
 export default function ExplorarCampamentos() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [lugares, setLugares] = useState([]);
-  const [busqueda, setBusqueda] = useState('');
+  const busqueda = searchParams.get('busqueda') || '';
+  const setBusqueda = (value) => setSearchParams(value ? { busqueda: value } : {}, { replace: true });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -49,11 +51,10 @@ export default function ExplorarCampamentos() {
   if (loading) return <Loading message="Cargando campamentos..." />;
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <main className="camp-explore mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-7 flex flex-col gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase text-adventista-verde"><Compass className="h-4 w-4" /> ACJ-Camp</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">Explorar campamentos</h1>
+          <h1 className="mt-2 text-3xl font-semibold text-slate-900">Más cerca de tu{' '}<br />próxima aventura.</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">Lugares registrados y aprobados para planificar tu próxima salida.</p>
         </div>
         <Link to="/mapa" className="inline-flex w-fit items-center gap-2 rounded border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-adventista-verde hover:text-adventista-verde">
@@ -63,7 +64,7 @@ export default function ExplorarCampamentos() {
 
       {error && <div className="mb-6"><ErrorMessage message={error} onRetry={cargarLugares} /></div>}
 
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="camp-explore-toolbar mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="flex min-h-11 w-full max-w-xl items-center gap-2 rounded border border-slate-300 bg-white px-3 focus-within:border-adventista-verde">
           <Search className="h-4 w-4 shrink-0 text-slate-500" />
           <input value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Buscar por nombre, ubicación o descripción" aria-label="Buscar campamentos" className="w-full bg-transparent py-2 text-sm outline-none" />
@@ -77,7 +78,7 @@ export default function ExplorarCampamentos() {
             const foto = normalizarFotos(lugar.fotos)[0];
             const calificacion = Number(lugar.promedio_calificacion || 0);
             return (
-              <article key={lugar.id} className="camp-card group flex min-w-0 flex-col overflow-hidden rounded-2xl transition-all duration-200 hover:-translate-y-1">
+              <article key={lugar.id} className="camp-card group flex min-w-0 flex-col overflow-hidden rounded-2xl">
                 <Link to={`/lugar/${lugar.id}`} aria-label={`Ver ${lugar.nombre}`} className="relative block aspect-[16/10] overflow-hidden bg-emerald-50">
                   {foto ? (
                     <img src={foto} alt={lugar.nombre} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />

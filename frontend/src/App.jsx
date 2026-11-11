@@ -14,14 +14,16 @@ import ProponerLugar from './pages/ProponerLugar';
 import { LocationProvider } from './context/LocationContext';
 import LocationPrompt from './components/LocationPrompt';
 import MiPerfil from './pages/MiPerfil';
+import InterfaceMotion from './components/InterfaceMotion';
 
 function App() {
   return (
     <AuthProvider>
       <LocationProvider>
         <LocationPrompt />
-        <div className="min-h-screen bg-[var(--camp-paper)]">
+        <div className="camp-app min-h-screen bg-[var(--camp-paper)]">
           <Navbar />
+          <InterfaceMotion />
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/login" element={<Login />} />

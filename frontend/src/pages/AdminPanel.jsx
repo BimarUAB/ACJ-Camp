@@ -459,18 +459,19 @@ export default function AdminPanel() {
   if (loading) return <Loading message="Cargando panel..." />;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-6 flex items-center gap-3">
+    <div className="camp-admin-page mx-auto max-w-7xl px-4 py-8">
+      <div className="camp-admin-heading mb-6 flex items-center gap-3">
         <ShieldCheck className="h-8 w-8 text-adventista-azul" />
-        <h1 className="text-2xl font-semibold text-slate-900">Panel de administración</h1>
+        <div><h1 className="text-2xl font-semibold text-slate-900">Panel de administración</h1><p>Gestiona los lugares, las reservas y tu comunidad.</p></div>
       </div>
 
-      {error && <div className="mb-6"><ErrorMessage message={error} onRetry={cargarTodo} /></div>}
+      {error && <div className="camp-admin-error mb-6"><ErrorMessage message={error} onRetry={cargarTodo} /></div>}
 
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="camp-admin-tabs mb-6 flex flex-wrap gap-2" role="group" aria-label="Secciones de administración">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            aria-pressed={tab === id}
             onClick={() => setTab(id)}
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium ${
               tab === id ? 'bg-adventista-azul text-white' : 'bg-white text-slate-700 hover:bg-slate-100'
@@ -481,6 +482,7 @@ export default function AdminPanel() {
         ))}
       </div>
 
+      <div className="camp-admin-content">
       {tab === 'stats' && stats && (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -874,6 +876,7 @@ export default function AdminPanel() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

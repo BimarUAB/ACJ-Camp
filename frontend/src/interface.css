@@ -1,0 +1,218 @@
+/* Shared interface surfaces and interaction states. */
+.camp-image-viewer {
+  margin: auto; padding: 0; border: 0; width: fit-content; max-width: min(1200px, 94vw);
+  max-height: 94dvh; background: #15251e; color: #fff; border-radius: 12px;
+  box-shadow: 0 20px 70px #0006;
+}
+.camp-image-viewer::backdrop { background: rgb(7 19 14 / 80%); }
+.camp-image-viewer__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 16px; }
+.camp-image-viewer__toolbar h2 { font-size: 13px; line-height: 1.5; font-weight: 500; }
+.camp-image-viewer__toolbar button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border: 1px solid #ffffff50; border-radius: 8px; background: #ffffff12; color: #fff; cursor: pointer; }
+.camp-image-viewer__toolbar button:hover { background: #ffffff26; }
+.camp-image-viewer__toolbar button:focus-visible { outline: 3px solid #e6cd96; outline-offset: 3px; }
+.camp-image-viewer > img { display: block; max-width: 100%; max-height: calc(94dvh - 88px); width: auto; height: auto; margin: auto; object-fit: contain; }
+.camp-image-viewer__error { padding: 24px; max-width: 420px; line-height: 1.7; }
+:root {
+  --camp-paper: #edf1eb;
+  --camp-line: #d0dacf;
+  --camp-muted: #58675d;
+  --camp-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --camp-shadow: 0 2px 4px #18352908, 0 10px 26px #1835290f;
+}
+
+.camp-app { overflow-wrap: anywhere; }
+.camp-app ::selection { background: #d8e6c7; color: #183529; }
+.camp-app { scrollbar-color: #9aad9b #edf1eb; }
+.camp-app :is(input, textarea) { caret-color: #244936; }
+.camp-app a { text-underline-offset: 4px; }
+.camp-app :is(h1, h2, h3) { text-wrap: balance; }
+.camp-app h1 { letter-spacing: -0.035em; }
+.camp-app :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid #53765b;
+  outline-offset: 3px;
+}
+.camp-app :is(button, a) { -webkit-tap-highlight-color: transparent; }
+.camp-app button { touch-action: manipulation; }
+.camp-app button:disabled { cursor: not-allowed; }
+
+.camp-site-header { box-shadow: 0 4px 18px #1835291a; }
+.camp-nav-shell {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 16px 24px; max-width: 1320px; margin: auto; padding: 16px 24px;
+}
+.camp-nav-identity { display: flex; align-items: center; gap: 24px; min-width: 0; }
+.camp-nav-toggle { display: none; align-items: center; justify-content: center; flex-shrink: 0; width: 42px; height: 42px; border: 1px solid #ffffff40; border-radius: 9px; color: white; }
+.camp-nav-links { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.camp-nav-link {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  padding: 10px; border-radius: 8px; color: #e1e9df; font-size: 12px; font-weight: 600;
+}
+.camp-nav-link.is-active { background: #ffffff17; color: #f1d594; }
+.camp-nav-link::after {
+  position: absolute; content: ''; height: 2px; bottom: 3px; left: 10px; right: 10px;
+  background: #c9a45e; transform: scaleX(0); transform-origin: left;
+  transition: transform 180ms var(--camp-ease);
+}
+.camp-nav-link.is-active::after { transform: scaleX(1); }
+.camp-nav-links > :last-child { flex-shrink: 0; margin-left: 6px; font-size: 12px; }
+
+.camp-app > :is(main, div).mx-auto { padding-top: 36px; padding-bottom: 64px; }
+.camp-app > :is(main, div).mx-auto > header {
+  margin-bottom: 28px; padding-bottom: 24px; border-bottom-color: #cbd6c9;
+}
+.camp-app :where(main, .mx-auto) :where(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), select, textarea) {
+  border-color: #c5d1c4; border-radius: 10px; background-color: #fff;
+}
+.camp-app :where(main, .mx-auto) :where(input, select):where(:not([type='checkbox']):not([type='radio']):not([type='range'])) { min-height: 44px; }
+.camp-app :is(main, .mx-auto) :is(input, select, textarea):disabled { background-color: #eef1ec; color: #667368; }
+.camp-app :is(main, .mx-auto) :is(input, textarea)::placeholder { color: #788679; }
+.camp-app .rounded-2xl.bg-white {
+  border: 1px solid #bdcebd; border-radius: 16px; box-shadow: var(--camp-shadow);
+}
+.camp-app :is(table) { font-size: 13px; }
+.camp-app thead { background: #e8eee5; color: #244936; }
+.camp-app :is(th, td) { padding: 14px 16px; vertical-align: middle; }
+.camp-app th { font-size: 11px; letter-spacing: 0.035em; }
+.camp-app tbody tr:nth-child(even) { background: #f7f9f5; }
+
+.dashboard-container { padding-top: 32px; }
+.dashboard-hero { border: 1px solid #183529; border-radius: 16px; box-shadow: 0 14px 38px #18352924; }
+.dashboard-hero__copy { padding: 52px 44px; }
+.dashboard-hero h1 { font-size: clamp(36px, 4.5vw, 60px); line-height: 1.08; }
+.dashboard-hero__copy > p:not(.dashboard-eyebrow) { color: #dae5d8; }
+.dashboard-button-primary, .dashboard-button-secondary { border-radius: 10px; }
+.dashboard-section { margin-top: 40px; }
+.dashboard-section-heading h2 { letter-spacing: -0.03em; font-family: 'DM Sans', sans-serif; font-size: 25px; font-weight: 650; }
+.dashboard-stats { margin-top: 24px; background: #fff; border-radius: 16px; box-shadow: var(--camp-shadow); }
+.dashboard-stat { padding: 22px 24px; }
+.dashboard-stat strong { font-family: 'DM Sans', sans-serif; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dashboard-shortcut-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 16px; }
+.dashboard-shortcut { display: flex; flex-direction: row; align-items: center; gap: 16px; border-radius: 14px; min-height: 120px; padding: 22px; }
+.dashboard-shortcut__body { flex: 1; min-width: 0; }
+.dashboard-shortcut__arrow { flex-shrink: 0; color: #6a806b; transition: transform 160ms var(--camp-ease); }
+.dashboard-shortcut__icon { flex-shrink: 0; width: 42px; height: 42px; border-radius: 12px; background: #edf2e8; }
+.dashboard-shortcut h3 { font-size: 15px; margin-top: 0; }
+.dashboard-shortcut p { font-size: 13px; color: #58675d; }
+.dashboard-place-card { border-radius: 16px; }
+.dashboard-place-card__body { padding: 18px; }
+.dashboard-place-card h3 { font-size: 15px; }
+.dashboard-place-card__body p { font-size: 12px; }
+.dashboard-place-card__meta { font-size: 12px; }
+.dashboard-place-card h3 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 40px; }
+.dashboard-place-card__image span { font-size: 11px; padding: 6px 9px; border-radius: 6px; }
+.dashboard-reservations { border: 1px solid #c8d5c7; border-radius: 16px; padding: 0 18px; background: white; box-shadow: var(--camp-shadow); }
+.dashboard-reservation:last-child { border-bottom: 0; }
+.dashboard-reservation { padding: 20px 0; }
+.dashboard-reservation__body strong { font-size: 14px; }
+.dashboard-reservation__body p { font-size: 12px; }
+.dashboard-empty { background: #ffffffa6; padding: 24px; border-radius: 16px; }
+.dashboard-agenda-empty { padding: 28px; border: 1px dashed #aabcaa; border-radius: 16px; background: #f8faf5; }
+.dashboard-agenda-empty > svg { color: #4f6b50; margin-bottom: 16px; }
+.dashboard-agenda-empty p { color: #58675d; font-size: 14px; line-height: 1.7; }
+.dashboard-agenda-empty a { display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; font-size: 13px; font-weight: 700; color: #244936; }
+
+.camp-card { border-radius: 16px; }
+.camp-card::before { z-index: 1; height: 3px; pointer-events: none; }
+.camp-card > div { padding: 22px; }
+.camp-card > div > a:last-child {
+  justify-content: space-between; border-top: 1px solid #e1e8de; padding-top: 16px; margin-top: 20px;
+}
+
+.camp-app :is(.camp-card, .dashboard-shortcut, .dashboard-place-card) {
+  transition: transform 180ms var(--camp-ease), box-shadow 180ms ease, border-color 180ms ease;
+}
+.camp-app :is(.camp-card, .dashboard-shortcut, .dashboard-place-card):hover { transform: none; }
+.camp-app .dashboard-place-card:hover img { transform: none; }
+.camp-app .camp-card:hover img { transform: none; }
+.camp-app .camp-map-shell { height: calc(100dvh - var(--camp-header-height, 92px)); }
+.camp-map-shell[data-base-layer='satelite'] .leaflet-top.leaflet-right { top: 64px; }
+.camp-map-shell[data-base-layer='satelite'] .leaflet-control-attribution {
+  max-width: min(340px, calc(100vw - 80px)); padding: 3px 5px; border-radius: 4px;
+  background: rgb(255 255 255 / 65%); color: #26342b; font-size: 9px; line-height: 1.4;
+}
+
+.camp-admin-tabs { padding: 6px; width: fit-content; max-width: 100%; border: 1px solid #cfdbcd; border-radius: 12px; background: #e4ebe0; }
+.camp-admin-tabs button { min-height: 42px; }
+.camp-admin-tabs button[aria-pressed='false'] { background: transparent; }
+.camp-app :is(td, .dashboard-stat strong) { font-variant-numeric: tabular-nums; }
+.camp-loading { min-height: 160px; gap: 6px; }
+.camp-loading__ring { width: 32px; height: 32px; border: 3px solid #d3dfcd; border-top-color: #244936; border-radius: 50%; animation: camp-loading-turn 700ms linear infinite; }
+@keyframes camp-loading-turn { to { transform: rotate(360deg); } }
+.camp-app :is(.dashboard-button-primary, .dashboard-button-secondary, .camp-auth-submit) > svg { transition: transform 160ms var(--camp-ease); }
+.camp-app :is(input, select, textarea):focus-visible { outline-width: 2px; }
+.camp-app :is(.camp-explore-toolbar > label, .camp-home-search, .camp-map-search):focus-within {
+  border-color: #53765b;
+  box-shadow: 0 0 0 2px rgb(83 118 91 / 14%);
+}
+.camp-app :is(.camp-explore-toolbar > label, .camp-home-search, .camp-map-search) input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.camp-auth { display: grid; grid-template-columns: 1fr 1fr; max-width: 1040px; margin: 48px auto; padding: 0 24px; align-items: stretch; }
+.camp-auth-story { padding: 56px 40px; background: #183529; color: white; border-radius: 24px 0 0 24px; display: flex; flex-direction: column; justify-content: center; }
+.camp-auth-story > svg { color: #e4c784; margin-bottom: 32px; }
+.camp-auth-story h1 { font-family: 'DM Serif Display', Georgia, serif; font-size: clamp(32px, 4vw, 46px); line-height: 1.15; margin-bottom: 20px; }
+.camp-auth-story p { color: #d5e2d0; font-size: 15px; line-height: 1.8; }
+.camp-auth-card { background: white; border: 1px solid #c8d5c7; border-left: 0; border-radius: 0 24px 24px 0; padding: 40px; box-shadow: var(--camp-shadow); }
+.camp-auth-card h2 { font-size: 25px; font-weight: 700; color: #183529; letter-spacing: -0.035em; }
+.camp-auth-tabs { display: flex; gap: 4px; background: #edf1eb; border-radius: 12px; padding: 4px; margin: 24px 0; }
+.camp-auth-tabs button { flex: 1; min-height: 42px; border-radius: 9px; font-size: 13px; font-weight: 600; color: #52644f; }
+.camp-auth-tabs button[aria-pressed='true'] { background: white; color: #244936; box-shadow: 0 2px 6px #18352916; }
+.camp-auth-card label { display: grid; gap: 7px; font-size: 13px; font-weight: 600; color: #344a39; }
+.camp-auth-card input, .camp-auth-card select { width: 100%; padding: 11px 12px; min-width: 0; border: 1px solid #c5d1c4; border-radius: 10px; font-weight: 400; }
+.camp-auth-submit { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; width: 100%; background: #244936; color: white; border-radius: 10px; font-weight: 600; }
+
+@media (hover: hover) and (pointer: fine) {
+  .camp-nav-link:hover { background: #ffffff12; color: #fff; }
+  .camp-nav-link:hover::after { transform: scaleX(1); }
+  .camp-app :is(.camp-card, .dashboard-shortcut, .dashboard-place-card):hover { transform: translateY(-2px); }
+  .dashboard-shortcut:hover .dashboard-shortcut__arrow { transform: translate(2px, -2px); }
+  .camp-app :is(.dashboard-button-primary, .camp-auth-submit):hover > svg { transform: translateX(3px); }
+  .camp-app tbody tr:hover { background: #edf3e8; }
+  .camp-app .dashboard-place-card:hover img, .camp-app .camp-card:hover img { transform: scale(1.025); }
+  .camp-app :is(button, .dashboard-button-primary, .dashboard-button-secondary, .camp-nav-link) { transition: transform 140ms var(--camp-ease), background-color 160ms ease; }
+  .camp-app :is(button:enabled, .dashboard-button-primary, .dashboard-button-secondary, .camp-nav-link):active:not(:focus-visible) { transform: scale(0.97); }
+  .camp-auth-submit:hover { background: #183529; }
+}
+@media (max-width: 1100px) {
+  .camp-nav-shell { gap: 12px; }
+  .camp-nav-identity { flex: 1; }
+  .camp-nav-toggle { display: inline-flex; }
+  .camp-nav-links { display: none; width: 100%; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid #ffffff20; }
+  .camp-nav-links.is-open { display: flex; }
+  .camp-nav-link { min-height: 44px; padding: 12px; font-size: 13px; }
+  .camp-app .camp-map-shell { height: calc(100dvh - var(--camp-header-height, 142px)); }
+}
+@media (max-width: 640px) {
+  .camp-nav-shell { padding: 12px 16px; }
+  .camp-nav-identity { gap: 16px; }
+  .camp-nav-identity > a:last-child:not(:first-child) > span:first-child { display: none; }
+  .camp-nav-identity > a:last-child:not(:first-child) > span:last-child > span:first-child { font-size: 12px; }
+  .camp-nav-identity > a:first-child { font-size: 15px; }
+  .camp-nav-identity > a:first-child img { width: 34px; height: 34px; }
+  .camp-nav-identity > a:last-child:not(:first-child) { flex: 1; }
+  .camp-nav-identity > a:last-child > span:last-child { min-width: 0; }
+  .dashboard-hero { border-radius: 16px; }
+  .dashboard-hero__copy { padding: 30px 24px; }
+  .dashboard-container { padding-top: 20px; }
+  .dashboard-shortcut-grid { grid-template-columns: 1fr; gap: 12px; }
+  .dashboard-shortcut { min-height: 100px; padding: 18px; }
+  .dashboard-content-grid { gap: 32px; }
+  .camp-auth { grid-template-columns: 1fr; margin: 24px auto; padding: 0 16px; }
+  .camp-auth-story { border-radius: 20px 20px 0 0; padding: 28px; }
+  .camp-auth-story > svg { margin-bottom: 16px; }
+  .camp-auth-story h1 { font-size: 30px; margin-bottom: 10px; }
+  .camp-auth-card { border-left: 1px solid #c8d5c7; border-top: 0; border-radius: 0 0 20px 20px; padding: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .camp-app :is(button, a, img, svg, .camp-card), .camp-nav-link::after { transition: none !important; }
+  .camp-app :is(.camp-card, .dashboard-shortcut, .dashboard-place-card):hover,
+  .camp-app :is(button, a):active,
+  .camp-app .dashboard-place-card:hover img,
+  .camp-app .camp-card:hover img { transform: none !important; }
+  .camp-app .dashboard-shortcut__arrow, .camp-app .camp-auth-submit > svg, .camp-app .dashboard-button-primary > svg { transform: none !important; }
+  .camp-loading__ring { animation: none; }
+  .camp-app .is-spinning { animation: none; }
+}

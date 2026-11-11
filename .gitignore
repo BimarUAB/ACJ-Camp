@@ -11,6 +11,7 @@ package-lock.json?backup
 .env.*.local
 
 # Build
+.taste-skill/
 dist/
 build/
 

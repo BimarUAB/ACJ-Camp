@@ -15,6 +15,35 @@ const parseJsonArray = (value) => {
 };
 
 const isAdmin = (req) => req.user?.rol === 'admin';
+
+exports.getGaleriaPublica = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT l.id AS lugar_id, l.nombre AS lugar_nombre, l.fotos, 'lugar' AS origen,
+             l.created_at AS fecha
+      FROM lugares_camping l WHERE l.estado = 'activo'
+      UNION ALL
+      SELECT l.id AS lugar_id, l.nombre AS lugar_nombre, r.fotos, 'resena' AS origen,
+             r.created_at AS fecha
+      FROM resenas r JOIN lugares_camping l ON l.id = r.lugar_id
+      WHERE l.estado = 'activo'
+      ORDER BY fecha DESC
+    `);
+    const seen = new Set();
+    const fotos = result.rows.flatMap((row) => parseJsonArray(row.fotos).flatMap((foto) => {
+      const url = typeof foto === 'string' ? foto : foto?.secure_url || foto?.url;
+      if (typeof url !== 'string' || !/^(https?:\/\/|\/uploads\/)/i.test(url) || seen.has(url)) return [];
+      seen.add(url);
+      return [{ url, lugar_id: row.lugar_id, lugar_nombre: row.lugar_nombre, origen: row.origen }];
+    }));
+    res.setHeader('Cache-Control', 'public, max-age=30');
+    res.json({ success: true, fotos });
+  } catch (error) {
+    console.error('Error consultando galería pública:', error.message);
+    res.status(503).json({ success: false, error: 'No se pudieron cargar las fotos del campamento.' });
+  }
+};
+
 const isOwnerOrAdmin = async (req, lugarId) => {
   if (isAdmin(req)) return true;
   const result = await pool.query('SELECT creado_por FROM lugares_camping WHERE id = $1', [lugarId]);

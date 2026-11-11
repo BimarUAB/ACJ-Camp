@@ -50,17 +50,35 @@ const CENTRO_LA_PAZ = [-16.5837, -68.1432];
 const CAPAS = {
   osm: {
     nombre: 'OpenStreetMap',
+    descripcion: 'Calles y lugares de la comunidad',
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; colaboradores de OpenStreetMap',
     subdomains: 'abc',
   },
   humanitario: {
     nombre: 'OpenStreetMap Humanitario',
+    descripcion: 'Mapa de calles con estilo humanitario',
     url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
     attribution: '&copy; colaboradores de OpenStreetMap, estilo HOT',
     subdomains: 'abc',
   },
+  satelite: {
+    nombre: 'Vista satelital',
+    descripcion: 'Sentinel-2 · 2025 · uso no comercial',
+    url: 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2025_3857/default/g/{z}/{y}/{x}.jpg',
+    attribution: '<a href="https://maps.eox.at/" target="_blank" rel="noopener noreferrer">EOX::Maps</a> | <a href="https://cloudless.eox.at/" target="_blank" rel="noopener noreferrer">EOxCloudless</a> © EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2025) | <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 4.0</a>',
+    maxNativeZoom: 14,
+    maxZoom: 19,
+  },
 };
+
+function MapAttribution({ satellite }) {
+  const map = useMap();
+  useEffect(() => {
+    map.attributionControl.setPosition(satellite ? 'topright' : 'bottomright');
+  }, [map, satellite]);
+  return null;
+}
 
 function MapCamera({ center, zoom }) {
   const map = useMap();
@@ -294,15 +312,16 @@ export default function BuscarLugares() {
   const capaActual = CAPAS[capa];
 
   return (
-    <main className="camp-map-shell" aria-label="Mapa de lugares de campamento">
+    <main className="camp-map-shell" data-base-layer={capa} aria-label="Mapa de lugares de campamento">
       <MapContainer center={mapCenter} zoom={mapZoom} scrollWheelZoom className="camp-map-canvas">
+        <MapAttribution satellite={capa === 'satelite'} />
         <MapCamera center={mapCenter} zoom={mapZoom} />
         <MapViewportSync onMove={(center, bounds, zoom) => {
           setMapCenter((current) => current[0] === center[0] && current[1] === center[1] ? current : center);
           setMapBounds((current) => current && current.every((value, index) => Math.abs(value - bounds[index]) < 0.0001) ? current : bounds);
           setMapZoom((current) => current === zoom ? current : zoom);
         }} />
-        <TileLayer url={capaActual.url} attribution={capaActual.attribution} subdomains={capaActual.subdomains} />
+        <TileLayer key={capa} url={capaActual.url} attribution={capaActual.attribution} subdomains={capaActual.subdomains || 'abc'} maxNativeZoom={capaActual.maxNativeZoom ?? 19} maxZoom={capaActual.maxZoom ?? 19} />
         {iglesias.filter((iglesia) => Number.isFinite(Number(iglesia.latitud)) && Number.isFinite(Number(iglesia.longitud))).map((iglesia) => (
           <Marker
             key={`iglesia-${iglesia.id}`}
@@ -517,10 +536,16 @@ export default function BuscarLugares() {
                   {Object.entries(CAPAS).map(([id, opcion]) => (
                     <label key={id} className={capa === id ? 'is-selected' : ''}>
                       <input type="radio" name="capa" value={id} checked={capa === id} onChange={() => setCapa(id)} />
-                      <span><strong>{opcion.nombre}</strong><small>Datos abiertos de OpenStreetMap</small></span>
+                      <span><strong>{opcion.nombre}</strong><small>{opcion.descripcion}</small></span>
                     </label>
                   ))}
                 </div>
+                {capa === 'satelite' && (
+                  <p className="mx-5 my-3 text-xs leading-5 text-slate-600">
+                    Imágenes de referencia de 2025, no en tiempo real. Al acercarte, el detalle disponible puede ser limitado.{' '}
+                    <a href="https://cloudless.eox.at/" target="_blank" rel="noreferrer" className="font-medium text-adventista-azul underline">Proveedor y licencia</a>
+                  </p>
+                )}
                 <div className="camp-map-overlay-control">
                   <label className="camp-map-overlay-toggle">
                     <input type="checkbox" checked={campingsOsmVisibles} onChange={(event) => setCampingsOsmVisibles(event.target.checked)} />

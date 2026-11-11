@@ -282,6 +282,10 @@ La matriz de pruebas está en [database/acceptance-tests.md](database/acceptance
 
 ### Capas y puntos de acampada
 
+**Vista satelital:** selecciona Sentinel-2 cloudless 2025 de EOX::Maps en Capas del mapa. El servicio externo no requiere clave de API y tiene cobertura global. Es un mosaico de referencia, no una transmisión en vivo; al ampliar por encima del zoom nativo 14 se amplían las mismas imágenes. Los marcadores de ACJ Camp, iglesias y campings OSM se conservan al cambiar de mapa base.
+
+El mosaico contiene datos Copernicus Sentinel modificados de 2025 y se distribuye bajo **CC BY-NC-SA 4.0** (uso no comercial, atribución y compartir adaptaciones bajo la misma licencia). Los créditos se muestran en el mapa. La capa externa no cambia la licencia del código de la aplicación; para un despliegue comercial se necesita una licencia adecuada o sustituir el proveedor. Información: [EOX::Maps](https://maps.eox.at/), [EOxCloudless](https://cloudless.eox.at/), [licencia](https://creativecommons.org/licenses/by-nc-sa/4.0/). El servicio público aplica límites de uso y disponibilidad; no se descargan imágenes masivamente ni se almacenan para uso sin conexión.
+
 En el mapa abre **Capas del mapa**. Ahí puedes cambiar el mapa base, activar/desactivar **Puntos de acampada OSM** y actualizar esos puntos. La consulta sigue el rectángulo visible, se cachea diez minutos y usa servicios Overpass de respaldo. Los marcadores de OpenStreetMap son independientes de la base PostgreSQL de ACJ Camp; tus lugares registrados y aprobados se muestran aparte cuando la base está disponible.
 
 Los puntos comunitarios aparecen si alguien los ha registrado en OpenStreetMap con `tourism=camp_site` o `tourism=caravan_site`. Desde el popup se abre el objeto en OpenStreetMap para revisarlo o contribuir. Los datos de OpenStreetMap se atribuyen a sus colaboradores y se publican bajo ODbL. La disponibilidad y actualización de Overpass dependen de servicios públicos externos, por lo que se conserva una respuesta en caché si el servicio falla.
