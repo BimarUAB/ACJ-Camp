@@ -1,5 +1,5 @@
 const pool = require('../config/database');
-const ExcelJS = require('exceljs');
+const { createLugaresWorkbook } = require('../utils/lugaresWorkbook');
 
 exports.getDashboardStats = async (req, res) => {
   try {
@@ -88,19 +88,7 @@ exports.exportarLugaresExcel = async (req, res) => {
       ORDER BY l.created_at DESC
     `);
 
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Lugares');
-    sheet.columns = [
-      { header: 'Nombre del lugar', key: 'nombre', width: 30 },
-      { header: 'Dirección', key: 'direccion', width: 38 },
-      { header: 'Estado', key: 'estado', width: 16 },
-      { header: 'Capacidad máxima', key: 'capacidad_maxima', width: 20 },
-      { header: 'Precio aproximado (Bs.)', key: 'precio_aprox', width: 24 },
-      { header: 'Registrado por', key: 'creador', width: 24 },
-      { header: 'Calificación promedio', key: 'promedio', width: 22 }
-    ];
-    sheet.addRows(result.rows);
-    sheet.getRow(1).font = { bold: true };
+    const workbook = createLugaresWorkbook(result.rows);
     const file = await workbook.xlsx.writeBuffer();
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

@@ -35,6 +35,29 @@ body {
   color: #fff;
 }
 
+.camp-card {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #aabcae;
+  box-shadow: 0 3px 6px rgba(24, 53, 41, 0.10), 0 12px 28px rgba(24, 53, 41, 0.13);
+}
+
+.camp-card:hover,
+.camp-card:focus-within {
+  border-color: var(--camp-forest);
+  box-shadow: 0 4px 8px rgba(24, 53, 41, 0.12), 0 18px 36px rgba(24, 53, 41, 0.20);
+}
+
+.camp-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, #244936 0%, #6f8759 55%, #c9a45e 100%);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1182,19 +1205,21 @@ body {
   min-height: 148px;
   flex-direction: column;
   align-items: flex-start;
-  border: 1px solid var(--camp-line);
+  border: 1px solid #aabcae;
   border-radius: 8px;
   padding: 20px;
-  background: rgba(255, 255, 252, 0.88);
+  background: #fff;
+  box-shadow: 0 3px 6px rgba(24, 53, 41, 0.08), 0 10px 24px rgba(24, 53, 41, 0.11);
   color: inherit;
   text-decoration: none;
   transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
-.dashboard-shortcut:hover {
+.dashboard-shortcut:hover,
+.dashboard-shortcut:focus-visible {
   transform: translateY(-2px);
-  border-color: #b8c9b4;
-  box-shadow: 0 10px 24px rgba(31, 57, 42, 0.08);
+  border-color: var(--camp-forest);
+  box-shadow: 0 4px 8px rgba(24, 53, 41, 0.12), 0 16px 30px rgba(24, 53, 41, 0.18);
 }
 
 .dashboard-shortcut__icon {
@@ -1236,17 +1261,20 @@ body {
 
 .dashboard-place-card {
   overflow: hidden;
-  border: 1px solid var(--camp-line);
+  border: 1px solid #aabcae;
   border-radius: 8px;
   background: #fff;
+  box-shadow: 0 3px 6px rgba(24, 53, 41, 0.08), 0 10px 24px rgba(24, 53, 41, 0.11);
   color: inherit;
   text-decoration: none;
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
-.dashboard-place-card:hover {
+.dashboard-place-card:hover,
+.dashboard-place-card:focus-visible {
   transform: translateY(-2px);
-  box-shadow: 0 10px 22px rgba(31, 57, 42, 0.1);
+  border-color: var(--camp-forest);
+  box-shadow: 0 4px 8px rgba(24, 53, 41, 0.12), 0 16px 30px rgba(24, 53, 41, 0.18);
 }
 
 .dashboard-place-card__image {

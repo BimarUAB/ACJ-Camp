@@ -77,7 +77,7 @@ export default function ExplorarCampamentos() {
             const foto = normalizarFotos(lugar.fotos)[0];
             const calificacion = Number(lugar.promedio_calificacion || 0);
             return (
-              <article key={lugar.id} className="group flex min-w-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white transition-shadow hover:shadow-md">
+              <article key={lugar.id} className="camp-card group flex min-w-0 flex-col overflow-hidden rounded-2xl transition-all duration-200 hover:-translate-y-1">
                 <Link to={`/lugar/${lugar.id}`} aria-label={`Ver ${lugar.nombre}`} className="relative block aspect-[16/10] overflow-hidden bg-emerald-50">
                   {foto ? (
                     <img src={foto} alt={lugar.nombre} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
@@ -96,12 +96,12 @@ export default function ExplorarCampamentos() {
                   </div>
                   <p className="mt-2 flex items-start gap-1.5 text-sm text-slate-600"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-adventista-verde" /><span className="line-clamp-2">{lugar.direccion || 'Ubicación registrada'}</span></p>
                   <p className="mt-3 line-clamp-2 min-h-10 text-sm text-slate-500">{lugar.descripcion || 'Consulta la información y disponibilidad de este campamento.'}</p>
-                  <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                    {lugar.capacidad_maxima && <span className="inline-flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Hasta {lugar.capacidad_maxima}</span>}
-                    {Number(lugar.precio_aprox) > 0 && <span>Desde Bs. {Number(lugar.precio_aprox).toFixed(0)}</span>}
-                    {Number(lugar.total_resenas) > 0 && <span>{lugar.total_resenas} {Number(lugar.total_resenas) === 1 ? 'reseña' : 'reseñas'}</span>}
+                  <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-200 pt-3 text-[11px] font-medium text-slate-600">
+                    {lugar.capacidad_maxima && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-emerald-800"><Users className="h-3.5 w-3.5" /> Hasta {lugar.capacidad_maxima}</span>}
+                    {Number(lugar.precio_aprox) > 0 && <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-amber-800">Desde Bs. {Number(lugar.precio_aprox).toFixed(0)}</span>}
+                    {Number(lugar.total_resenas) > 0 && <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-slate-700">{lugar.total_resenas} {Number(lugar.total_resenas) === 1 ? 'reseña' : 'reseñas'}</span>}
                   </div>
-                  <Link to={`/lugar/${lugar.id}`} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-adventista-azul hover:underline">
+                  <Link to={`/lugar/${lugar.id}`} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-adventista-azul hover:text-adventista-verde">
                     Ver campamento <ArrowRight className="h-4 w-4" />
                   </Link>
                 </div>
